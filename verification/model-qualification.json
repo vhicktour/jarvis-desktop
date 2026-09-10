@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-10T21:08:49.093Z",
+  "generatedAt": "2026-09-10T21:32:58.448Z",
   "profile": "/private/tmp/jarvis-native-qa2",
   "microphoneRouteTested": false,
   "scope": "Each installed model runs the observable behavior its role is relied on for, against the installed revision on this Mac. Results are recorded in each model manifest.",
@@ -17,12 +17,12 @@
         },
         {
           "label": "Recognition speed",
-          "value": "2.2× realtime",
+          "value": "1.9× realtime",
           "passed": true
         }
       ],
-      "elapsedSeconds": 9.821,
-      "detail": "Parakeet passed 2 checks on this Mac in 9.8 s.",
+      "elapsedSeconds": 9.741,
+      "detail": "Parakeet passed 2 checks on this Mac in 9.7 s.",
       "name": "Parakeet",
       "installed": true
     },
@@ -44,12 +44,12 @@
         },
         {
           "label": "Peak amplitude",
-          "value": "0.333",
+          "value": "0.347",
           "passed": true
         },
         {
           "label": "Speech energy",
-          "value": "0.0577 RMS",
+          "value": "0.0576 RMS",
           "passed": true
         },
         {
@@ -58,8 +58,8 @@
           "passed": true
         }
       ],
-      "elapsedSeconds": 1.736,
-      "detail": "Kokoro passed 5 checks on this Mac in 1.7 s.",
+      "elapsedSeconds": 1.323,
+      "detail": "Kokoro passed 5 checks on this Mac in 1.3 s.",
       "name": "Kokoro",
       "installed": true
     },
@@ -80,8 +80,8 @@
           "passed": true
         }
       ],
-      "elapsedSeconds": 4.229,
-      "detail": "Qwen 3.5 passed 2 checks on this Mac in 4.2 s.",
+      "elapsedSeconds": 4.422,
+      "detail": "Qwen 3.5 passed 2 checks on this Mac in 4.4 s.",
       "name": "Qwen 3.5",
       "installed": true
     },
@@ -112,7 +112,7 @@
           "passed": true
         }
       ],
-      "elapsedSeconds": 0.813,
+      "elapsedSeconds": 0.846,
       "detail": "Qwen Embedding passed 4 checks on this Mac in 0.8 s.",
       "name": "Qwen Embedding",
       "installed": true
@@ -130,12 +130,12 @@
         },
         {
           "label": "Recognition speed",
-          "value": "11.5× realtime",
+          "value": "12.4× realtime",
           "passed": true
         }
       ],
-      "elapsedSeconds": 3.728,
-      "detail": "Whisper passed 2 checks on this Mac in 3.7 s.",
+      "elapsedSeconds": 2.228,
+      "detail": "Whisper passed 2 checks on this Mac in 2.2 s.",
       "name": "Whisper",
       "installed": true
     },
@@ -161,8 +161,8 @@
           "passed": true
         }
       ],
-      "elapsedSeconds": 1.911,
-      "detail": "Silero VAD passed 3 checks on this Mac in 1.9 s.",
+      "elapsedSeconds": 1.789,
+      "detail": "Silero VAD passed 3 checks on this Mac in 1.8 s.",
       "name": "Silero VAD",
       "installed": true
     },
@@ -174,7 +174,7 @@
       "checks": [
         {
           "label": "Probability in range",
-          "value": "0.588, 0.347, 0.712",
+          "value": "0.470, 0.441, 0.500",
           "passed": true
         },
         {
@@ -189,12 +189,12 @@
         },
         {
           "label": "Every finished sentence reaches 0.65",
-          "value": "0.588, 0.347, 0.712 · lowest 0.347",
+          "value": "0.470, 0.441, 0.500 · lowest 0.441",
           "passed": false
         }
       ],
-      "elapsedSeconds": 0.934,
-      "detail": "Smart Turn is not qualified on this Mac: Every finished sentence reaches 0.65 — 0.588, 0.347, 0.712 · lowest 0.347",
+      "elapsedSeconds": 0.941,
+      "detail": "Smart Turn is not qualified on this Mac: Every finished sentence reaches 0.65 — 0.470, 0.441, 0.500 · lowest 0.441",
       "name": "Smart Turn",
       "installed": true
     },
@@ -253,8 +253,8 @@
           "passed": true
         }
       ],
-      "elapsedSeconds": 31.336,
-      "detail": "UI-TARS passed 3 checks on this Mac in 31.3 s.",
+      "elapsedSeconds": 30.644,
+      "detail": "UI-TARS passed 3 checks on this Mac in 30.6 s.",
       "name": "UI-TARS",
       "installed": true
     }
@@ -263,7 +263,7 @@
     "version": 1,
     "mlx": true,
     "memory": 4876470588,
-    "peakMemory": 5872243036,
+    "peakMemory": 5829546404,
     "roles": [
       "asr",
       "embedding",
@@ -274,7 +274,7 @@
       "vision"
     ]
   },
-  "elapsedSeconds": 54.684787834000005,
+  "elapsedSeconds": 52.1340815,
   "installed": 8,
   "qualified": 7,
   "passed": false
