@@ -917,27 +917,28 @@ test('a seen point is mapped onto a real control, and one that lands on nothing 
     },
   ]
   let deletes = 0
-  // The captured area is deliberately not the area asked for, at half scale.
+  // The captured area is half the area asked for, as a region clipped to a display would be.
+  // Mapping through the requested width instead would put every point somewhere else entirely.
   const native = (async (method: string) => {
     if (method === 'context.region')
       return {
         imagePath: '/tmp/seen.jpg',
         width: 640,
-        capturedX: 400,
-        capturedY: 300,
-        capturedWidth: 1280,
+        capturedX: 476,
+        capturedY: 376,
+        capturedWidth: 164,
       }
     if (method === 'ephemeral.delete') return ++deletes
     throw new Error(`unexpected ${method}`)
   }) as unknown as Parameters<typeof locateBySight>[0]
   const seeing = (point: number[]) =>
     ({ request: async () => ({ points: [point] }) }) as unknown as Models
-  // (70, 57.5) in the image is (540, 415) on screen, which is inside Send.
-  const found = await locateBySight(native, seeing([70, 57.5]), 'Send', controls, [])
+  // (350, 150) in the image is (566, 414) on screen, inside Send. Through the requested width
+  // it would be (655, 453), which is no control at all.
+  const found = await locateBySight(native, seeing([350, 150]), 'Send', controls, [])
   assert.equal(found.label, 'Send')
-  // A point five hundred away from every control is not a control.
   await assert.rejects(
-    locateBySight(native, seeing([300, 300]), 'Send', controls, []),
+    locateBySight(native, seeing([2000, 2000]), 'Send', controls, []),
     /not a control I can press/,
   )
   await assert.rejects(

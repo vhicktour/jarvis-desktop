@@ -101,7 +101,10 @@ export function Models() {
       {!snapshot.diagnostics.modelRuntime && (
         <Row
           title="Local model runtime"
-          description="A private Python environment with pinned MLX dependencies."
+          description={
+            snapshot.diagnostics.workerErrors[0] ??
+            'A private Python environment with pinned MLX dependencies.'
+          }
         >
           <Button
             variant="primary"

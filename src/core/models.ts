@@ -9,6 +9,10 @@ export class Models {
   process?: JsonProcess
   records = structuredClone(MODELS)
   private qualifying = new Set<string>()
+  /** Why the runtime is not up, when it is not. Without this the interface can only shrug. */
+  failure?: string
+  private stopping = false
+  private diagnostics: string[] = []
   // The worker is the authority on which roles it can load; the interface only reflects it.
   private runnable: string[] = []
   constructor(
@@ -45,20 +49,33 @@ export class Models {
       },
     ))
     this.process.on('message', (message) => this.message(message))
+    // Python reports why it could not start on stderr; keep the last of it to explain a failure.
+    worker.on('diagnostic', (line: string) => {
+      const text = String(line).trim()
+      if (text) this.diagnostics = [...this.diagnostics, text].slice(-8)
+    })
     worker.on('exit', () => {
-      if (this.process === worker) this.process = undefined
+      if (this.process !== worker) return
+      this.process = undefined
+      if (!this.stopping) this.failure = this.explain('The local model runtime stopped.')
       this.changed()
     })
     try {
       const info = await worker.request('ping', {}, 60_000)
       this.runnable = Array.isArray(info?.roles) ? info.roles : []
+      this.failure = undefined
       await this.refresh()
     } catch (error) {
       worker.stop()
       if (this.process === worker) this.process = undefined
+      this.failure = this.explain(safeError(error))
+      this.changed()
       throw error
     }
     return true
+  }
+  private explain(reason: string) {
+    return [reason, ...this.diagnostics].join(' · ').slice(0, 600)
   }
   async refresh() {
     if (!this.process) return
@@ -125,6 +142,7 @@ export class Models {
     return this.records.some((m) => m.id === id && m.status === 'installed' && m.qualified)
   }
   stop() {
+    this.stopping = true
     this.process?.stop()
   }
 }

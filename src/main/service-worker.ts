@@ -98,6 +98,7 @@ function publish(refresh = true) {
       connections: providers?.connections ?? state.connections,
     }
     state.diagnostics.modelRuntime = !!models?.process
+    state.diagnostics.workerErrors = models?.failure ? [models.failure] : []
     const receipt = state.receipts[0]
     if (receipt && receipt.id !== lastReceiptId) {
       lastReceiptId = receipt.id
@@ -1035,11 +1036,17 @@ async function command(value: any): Promise<unknown> {
       )
       return true
     case 'runtime.setup':
-      invariant(
-        await models.start(),
-        'The bundled runtime is missing. In this development checkout, run pnpm models:setup, then reopen Jarvis.',
+      // Starting can outlast a request, and a failure has to say why rather than time out silently.
+      background(
+        models.start().then((ready) => {
+          invariant(
+            ready,
+            'The bundled runtime is missing. In this development checkout, run pnpm models:setup, then reopen Jarvis.',
+          )
+          publish()
+          notice('Your local model runtime is ready.', 'success')
+        }),
       )
-      publish()
       return true
     case 'diagnostics.refresh':
       state.permissions = await native('permissions')
