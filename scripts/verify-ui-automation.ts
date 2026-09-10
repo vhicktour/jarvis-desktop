@@ -43,16 +43,35 @@ try {
     }
   }
   assert.ok(listing, 'No running application exposed a pressable control.')
-  const control = listing.elements.find((element) => element.enabled)
-  results.enumerated = { app: listing.app, controls: listing.elements.length }
+  // Live content moves between calls, which is the defence working. Take one that holds still.
+  let control: any
+  let resolved: any
+  let steady = 0
+  for (const candidate of listing.elements.filter((element: any) => element.enabled)) {
+    const attempt = await call('ui.press', {
+      bundleId: listing.bundleId,
+      path: candidate.path,
+      role: candidate.role,
+      label: candidate.label,
+      dryRun: true,
+    }).catch(() => undefined)
+    if (!attempt?.resolved) continue
+    steady++
+    control ??= candidate
+    resolved ??= attempt
+  }
+  assert.ok(control, 'No enumerated control resolved again.')
+  results.enumerated = {
+    app: listing.app,
+    controls: listing.elements.length,
+    resolvedAgain: steady,
+  }
   const descriptor = {
     bundleId: listing.bundleId,
     path: control.path,
     role: control.role,
     label: control.label,
   }
-  const resolved = await call('ui.press', { ...descriptor, dryRun: true })
-  assert.equal(resolved.resolved, true)
   assert.equal(resolved.pressed, false, 'A dry run pressed the control.')
   results.dryRunResolved = { role: control.role, depth: control.path.length }
   // Every way the target can have moved out from under the approval.

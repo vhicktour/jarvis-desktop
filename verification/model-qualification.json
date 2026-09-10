@@ -1,8 +1,8 @@
 {
-  "generatedAt": "2026-09-10T19:17:07.715Z",
+  "generatedAt": "2026-09-10T21:08:49.093Z",
   "profile": "/private/tmp/jarvis-native-qa2",
   "microphoneRouteTested": false,
-  "scope": "Each installed model runs the observable behaviour its role is relied on for, against the installed revision on this Mac. Results are recorded in each model manifest.",
+  "scope": "Each installed model runs the observable behavior its role is relied on for, against the installed revision on this Mac. Results are recorded in each model manifest.",
   "models": [
     {
       "id": "parakeet",
@@ -17,12 +17,12 @@
         },
         {
           "label": "Recognition speed",
-          "value": "1.7× realtime",
+          "value": "2.2× realtime",
           "passed": true
         }
       ],
-      "elapsedSeconds": 9.585,
-      "detail": "Parakeet passed 2 checks on this Mac in 9.6 s.",
+      "elapsedSeconds": 9.821,
+      "detail": "Parakeet passed 2 checks on this Mac in 9.8 s.",
       "name": "Parakeet",
       "installed": true
     },
@@ -44,7 +44,7 @@
         },
         {
           "label": "Peak amplitude",
-          "value": "0.336",
+          "value": "0.333",
           "passed": true
         },
         {
@@ -58,8 +58,8 @@
           "passed": true
         }
       ],
-      "elapsedSeconds": 1.185,
-      "detail": "Kokoro passed 5 checks on this Mac in 1.2 s.",
+      "elapsedSeconds": 1.736,
+      "detail": "Kokoro passed 5 checks on this Mac in 1.7 s.",
       "name": "Kokoro",
       "installed": true
     },
@@ -80,8 +80,8 @@
           "passed": true
         }
       ],
-      "elapsedSeconds": 6.346,
-      "detail": "Qwen 3.5 passed 2 checks on this Mac in 6.3 s.",
+      "elapsedSeconds": 4.229,
+      "detail": "Qwen 3.5 passed 2 checks on this Mac in 4.2 s.",
       "name": "Qwen 3.5",
       "installed": true
     },
@@ -112,8 +112,8 @@
           "passed": true
         }
       ],
-      "elapsedSeconds": 0.879,
-      "detail": "Qwen Embedding passed 4 checks on this Mac in 0.9 s.",
+      "elapsedSeconds": 0.813,
+      "detail": "Qwen Embedding passed 4 checks on this Mac in 0.8 s.",
       "name": "Qwen Embedding",
       "installed": true
     },
@@ -130,12 +130,12 @@
         },
         {
           "label": "Recognition speed",
-          "value": "6.9× realtime",
+          "value": "11.5× realtime",
           "passed": true
         }
       ],
-      "elapsedSeconds": 2.607,
-      "detail": "Whisper passed 2 checks on this Mac in 2.6 s.",
+      "elapsedSeconds": 3.728,
+      "detail": "Whisper passed 2 checks on this Mac in 3.7 s.",
       "name": "Whisper",
       "installed": true
     },
@@ -161,8 +161,8 @@
           "passed": true
         }
       ],
-      "elapsedSeconds": 1.974,
-      "detail": "Silero VAD passed 3 checks on this Mac in 2.0 s.",
+      "elapsedSeconds": 1.911,
+      "detail": "Silero VAD passed 3 checks on this Mac in 1.9 s.",
       "name": "Silero VAD",
       "installed": true
     },
@@ -174,7 +174,7 @@
       "checks": [
         {
           "label": "Probability in range",
-          "value": "0.403, 0.490, 0.214",
+          "value": "0.588, 0.347, 0.712",
           "passed": true
         },
         {
@@ -189,12 +189,12 @@
         },
         {
           "label": "Every finished sentence reaches 0.65",
-          "value": "0.403, 0.490, 0.214 · lowest 0.214",
+          "value": "0.588, 0.347, 0.712 · lowest 0.347",
           "passed": false
         }
       ],
-      "elapsedSeconds": 0.977,
-      "detail": "Smart Turn is not qualified on this Mac: Every finished sentence reaches 0.65 — 0.403, 0.490, 0.214 · lowest 0.214",
+      "elapsedSeconds": 0.934,
+      "detail": "Smart Turn is not qualified on this Mac: Every finished sentence reaches 0.65 — 0.588, 0.347, 0.712 · lowest 0.347",
       "name": "Smart Turn",
       "installed": true
     },
@@ -233,24 +233,49 @@
     },
     {
       "id": "ui-tars",
-      "name": "UI-TARS",
       "role": "vision",
-      "revision": "",
-      "installed": false,
-      "qualified": false,
-      "checks": [],
-      "elapsedSeconds": 0,
-      "detail": "Research profile. Installation is refused until a qualified Mac adapter exists."
+      "revision": "cca0e360e25322cdf480cf841e301b6d55bce9e0",
+      "qualified": true,
+      "checks": [
+        {
+          "label": "Located Cancel",
+          "value": "(267, 641) chose Cancel, just outside its edge",
+          "passed": true
+        },
+        {
+          "label": "Located Save",
+          "value": "(602, 641) chose Save",
+          "passed": true
+        },
+        {
+          "label": "Located Delete",
+          "value": "(862, 641) chose Delete",
+          "passed": true
+        }
+      ],
+      "elapsedSeconds": 31.336,
+      "detail": "UI-TARS passed 3 checks on this Mac in 31.3 s.",
+      "name": "UI-TARS",
+      "installed": true
     }
   ],
   "memory": {
     "version": 1,
     "mlx": true,
-    "memory": 328194682,
-    "peakMemory": 3267683644
+    "memory": 4876470588,
+    "peakMemory": 5872243036,
+    "roles": [
+      "asr",
+      "embedding",
+      "reasoning",
+      "tts",
+      "turn",
+      "vad",
+      "vision"
+    ]
   },
-  "elapsedSeconds": 23.759282707999997,
-  "installed": 7,
-  "qualified": 6,
+  "elapsedSeconds": 54.684787834000005,
+  "installed": 8,
+  "qualified": 7,
   "passed": false
 }

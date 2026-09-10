@@ -227,8 +227,11 @@ async function init(input: any) {
   models = new Models(config.dataDir, workersDir, () => publish(), modelEvent)
   vault = new VaultIndex(store, models, () => publish())
   providers = new ProviderHub(config, store, host, () => publish())
-  const executeLocal = localExecutor(models, native, (id) =>
-    providers.connections.some((c) => c.id === id && c.status === 'connected'),
+  const executeLocal = localExecutor(
+    models,
+    native,
+    (id) => providers.connections.some((c) => c.id === id && c.status === 'connected'),
+    () => state.settings.excludedApps,
   )
   tasks = new TaskEngine(
     store,

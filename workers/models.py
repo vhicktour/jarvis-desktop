@@ -29,6 +29,8 @@ QUALIFY_TEXT = "Good evening. I am Jarvis. Ready when you are."
 QUALIFY_KEY = "ready when you are"
 # Synthesis is not bit-identical between renders, so endpointing is judged over several takes.
 QUALIFY_TAKES = 3
+# Roles this worker has a real load path for. Anything else cannot be installed or checked.
+RUNNABLE_ROLES = {"asr", "tts", "reasoning", "embedding", "vad", "turn", "vision"}
 
 def send(value):
     data = json.dumps(value, ensure_ascii=False, allow_nan=False)
@@ -83,7 +85,7 @@ def load(model_id, role):
     elif role == "tts":
         from mlx_audio.tts.utils import load_model
         LOADED = load_model(path, model_type="kokoro")
-    elif role == "reasoning":
+    elif role in ("reasoning", "vision"):
         from mlx_vlm import load as load_vlm
         LOADED = load_vlm(path, trust_remote_code=False)
     elif role == "embedding":
@@ -157,6 +159,73 @@ def chat(messages, max_tokens, image=None, delta=None, cancelled=None):
         if delta:
             delta(chunk.text)
     return text.strip()
+
+def fixture_font(size):
+    from PIL import ImageFont
+    for candidate in ("/System/Library/Fonts/Supplemental/Arial.ttf", "/System/Library/Fonts/Helvetica.ttc"):
+        try:
+            return ImageFont.truetype(candidate, size)
+        except OSError:
+            continue
+    return ImageFont.load_default(size=size)
+
+def grounding_fixture():
+    """A plain dialog with three labelled buttons, drawn identically on every run."""
+    from PIL import Image, ImageDraw
+    width, height = 1280, 800
+    targets = {"Cancel": (280, 600, 480, 664), "Save": (540, 600, 740, 664), "Delete": (800, 600, 1000, 664)}
+    image = Image.new("RGB", (width, height), (238, 240, 244))
+    draw = ImageDraw.Draw(image)
+    draw.rectangle([200, 150, 1080, 720], fill=(252, 252, 253), outline=(198, 203, 212), width=2)
+    draw.rectangle([200, 150, 1080, 198], fill=(232, 235, 240), outline=(198, 203, 212), width=2)
+    draw.text((232, 160), "Project settings", font=fixture_font(30), fill=(30, 36, 46))
+    body = fixture_font(26)
+    draw.text((232, 250), "Changes apply the next time the project opens.", font=body, fill=(70, 78, 92))
+    for label, (x0, y0, x1, y1) in targets.items():
+        draw.rounded_rectangle([x0, y0, x1, y1], radius=10, fill=(255, 255, 255), outline=(140, 148, 162), width=2)
+        box = draw.textbbox((0, 0), label, font=body)
+        draw.text((x0 + (x1 - x0 - box[2]) / 2, y0 + (y1 - y0 - box[3]) / 2 - 3), label, font=body, fill=(24, 30, 40))
+    path = TEMP / (str(uuid.uuid4()) + ".png")
+    image.save(str(path))
+    return path, targets
+
+GROUND_PROMPT = """You are a GUI agent. You are given a screenshot and an instruction. Output only the action.
+
+## Action Space
+click(point='<point>x y</point>')
+
+## User Instruction
+{instruction}"""
+
+def ground(image_path, instruction, cancelled=None):
+    """Ask the vision model where a control is. It proposes a point; it never acts on one."""
+    from PIL import Image
+    from mlx_vlm import stream_generate
+    from mlx_vlm.prompt_utils import apply_chat_template
+    from mlx_vlm.utils import load_config
+    path = Path(image_path).resolve()
+    if not path.is_relative_to(TEMP):
+        raise ValueError("Only a bounded temporary capture may be grounded.")
+    with Image.open(path) as image:
+        width, height = image.size
+    model, processor = load("ui-tars", "vision")
+    prompt = apply_chat_template(
+        processor,
+        load_config(model_path("ui-tars")),
+        [{"role": "user", "content": GROUND_PROMPT.format(instruction=instruction[:500])}],
+        num_images=1,
+    )
+    text = ""
+    for chunk in stream_generate(model, processor, prompt, image=[str(path)], max_tokens=192, temperature=0):
+        if cancelled and cancelled():
+            raise ValueError("Cancelled.")
+        text += chunk.text
+    return {"text": text.strip(), "width": width, "height": height, "points": read_points(text)}
+
+def read_points(text):
+    """Every coordinate pair the model offered, in the order it offered them."""
+    pairs = re.findall(r"[(<\[]\s*(\d+(?:\.\d+)?)\s*[, ]\s*(\d+(?:\.\d+)?)\s*[)>\]]", text)
+    return [[float(x), float(y)] for x, y in pairs]
 
 def check(label, value, passed):
     return {"label": label, "value": str(value)[:400], "passed": bool(passed)}
@@ -261,6 +330,32 @@ def qualify(model_id, item, cancelled):
             check("Finite values", "all dimensions", values is not None and bool(np.isfinite(values).all())),
             check("Related text ranks higher", f"{similar:.3f} against {distinct:.3f}", similar > distinct),
         ]
+    if role == "vision":
+        stage("Drawing the grounding fixture")
+        path, targets = grounding_fixture()
+        centres = {name: ((box[0] + box[2]) / 2, (box[1] + box[3]) / 2) for name, box in targets.items()}
+        checks = []
+        try:
+            stage(f"Loading {item['name']}")
+            load("ui-tars", "vision")
+            for label, box in targets.items():
+                stage(f"Locating the {label} control")
+                result = ground(str(path), f"Click the {label} button.", cancelled)
+                point = result["points"][0] if result["points"] else None
+                if not point:
+                    checks.append(check(f"Located {label}", result["text"] or "no coordinate", False))
+                    continue
+                x, y = point
+                inside_image = 0 <= x <= result["width"] and 0 <= y <= result["height"]
+                nearest = min(centres, key=lambda name: (centres[name][0] - x) ** 2 + (centres[name][1] - y) ** 2)
+                on_target = box[0] <= x <= box[2] and box[1] <= y <= box[3]
+                # Picking the right control is the capability. The approval shows what it picked,
+                # so a point a few points outside an edge is reported, not silently accepted.
+                detail = f"({x:.0f}, {y:.0f}) chose {nearest}" + ("" if on_target else ", just outside its edge")
+                checks.append(check(f"Located {label}", detail, inside_image and nearest == label))
+        finally:
+            path.unlink(missing_ok=True)
+        return checks
     if role in ("vad", "turn"):
         from endpoint import predict, THRESHOLD
         turn = model_path("smart-turn") if role == "turn" else None
@@ -316,14 +411,15 @@ def execute(request):
             raise ValueError("Cancelled.")
         if method == "ping":
             import mlx.core as mx
-            result = {"version": 1, "mlx": True, "memory": mx.get_active_memory(), "peakMemory": mx.get_peak_memory()}
+            result = {"version": 1, "mlx": True, "memory": mx.get_active_memory(), "peakMemory": mx.get_peak_memory(), "roles": sorted(RUNNABLE_ROLES)}
         elif method == "models.status":
             result = {item["id"]: manifest(item["id"]) for item in CATALOG}
         elif method == "model.install":
             model_id = p["id"]
             item = next(item for item in CATALOG if item["id"] == model_id)
-            if item["experimental"]:
-                raise ValueError("This research profile has no qualified Mac adapter yet.")
+            # Refused because the worker cannot run the role, not because of a label on it.
+            if item["role"] not in RUNNABLE_ROLES:
+                raise ValueError("This research profile has no Mac adapter in this worker yet.")
             os.environ.pop("HF_HUB_OFFLINE", None)
             from huggingface_hub import HfApi, snapshot_download
             from huggingface_hub import constants as hf_constants
@@ -368,6 +464,8 @@ def execute(request):
             result = {"text": text}
         elif method == "embed":
             result = {"vectors": embed(p["texts"]), "revision": manifest("embedding")["revision"]}
+        elif method == "ground":
+            result = ground(p["path"], p["instruction"], cancelled)
         elif method == "model.qualify":
             model_id = p["id"]
             record = manifest(model_id)

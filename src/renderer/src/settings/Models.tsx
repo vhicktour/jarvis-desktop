@@ -3,7 +3,7 @@ import type { ModelRecord } from '../../../shared/contracts'
 import { useJarvis } from '../state'
 import { Badge, Button, Confirm, Group, IconButton, Row } from '../ui'
 
-function ModelRow({ model }: { model: ModelRecord }) {
+function ModelRow({ model, runtime }: { model: ModelRecord; runtime: boolean }) {
   const { command } = useJarvis()
   return (
     <div className="model-row">
@@ -55,13 +55,13 @@ function ModelRow({ model }: { model: ModelRecord }) {
           </>
         ) : (
           <Button
-            isDisabled={model.experimental || model.status === 'installing'}
+            isDisabled={!model.installable || model.status === 'installing'}
             busy={model.status === 'installing'}
             onPress={() => {
               void command({ type: 'model.install', id: model.id })
             }}
           >
-            {model.experimental ? (
+            {!model.installable && runtime ? (
               'Research'
             ) : model.status === 'installing' ? (
               'Installing'
@@ -121,7 +121,7 @@ export function Models() {
         {snapshot.models
           .filter((m) => !m.experimental)
           .map((model) => (
-            <ModelRow key={model.id} model={model} />
+            <ModelRow key={model.id} model={model} runtime={snapshot.diagnostics.modelRuntime} />
           ))}
       </Group>
       <Group
@@ -131,7 +131,7 @@ export function Models() {
         {snapshot.models
           .filter((m) => m.experimental)
           .map((model) => (
-            <ModelRow key={model.id} model={model} />
+            <ModelRow key={model.id} model={model} runtime={snapshot.diagnostics.modelRuntime} />
           ))}
       </Group>
       <p className="fine-print">

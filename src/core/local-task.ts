@@ -83,10 +83,73 @@ export function literalFileContent(objective: string): string | undefined {
   const text = match[1]
   return /^(?:"[\s\S]*"|'[\s\S]*'|“[\s\S]*”)$/.test(text) ? text.slice(1, -1) : text
 }
+type Native = <T = any>(method: string, params?: unknown) => Promise<T>
+/**
+ * The vision model only proposes a place. Accessibility decides what is actually there, so a
+ * press is still an AXPress on a named element and never a click at a guessed coordinate.
+ */
+export async function locateBySight(
+  native: Native,
+  models: Models,
+  label: string,
+  controls: Control[],
+  excludedApps: string[],
+) {
+  const pad = 24
+  const left = Math.min(...controls.map((item) => item.x)) - pad
+  const top = Math.min(...controls.map((item) => item.y)) - pad
+  const region = {
+    x: left,
+    y: top,
+    width: Math.max(...controls.map((item) => item.x + item.width)) + pad - left,
+    height: Math.max(...controls.map((item) => item.y + item.height)) + pad - top,
+  }
+  const capture = await native<{
+    imagePath: string
+    width: number
+    capturedX: number
+    capturedY: number
+    capturedWidth: number
+  }>('context.region', { ...region, excludedApps })
+  try {
+    const seen = await models.request(
+      'ground',
+      { path: capture.imagePath, instruction: `Click the ${label} control.` },
+      undefined,
+      600_000,
+    )
+    const point = seen.points?.[0]
+    invariant(point, `I could not see anything called “${label}” on screen.`)
+    // Map against the area actually captured; a region clipped to the display is not the one asked for.
+    const scale = capture.width / capture.capturedWidth
+    const x = capture.capturedX + point[0] / scale
+    const y = capture.capturedY + point[1] / scale
+    const inside = controls.find(
+      (item) => x >= item.x && x <= item.x + item.width && y >= item.y && y <= item.y + item.height,
+    )
+    const nearest =
+      inside ??
+      controls
+        .map((item) => ({
+          item,
+          away: Math.hypot(x - (item.x + item.width / 2), y - (item.y + item.height / 2)),
+        }))
+        .sort((a, b) => a.away - b.away)
+        .find((candidate) => candidate.away <= 60)?.item
+    invariant(
+      nearest,
+      `I saw something at that place, but it is not a control I can press. Name it exactly, or press it yourself.`,
+    )
+    return nearest
+  } finally {
+    await native('ephemeral.delete', { path: capture.imagePath })
+  }
+}
 export function localExecutor(
   models: Models,
   native?: <T = any>(method: string, params?: unknown) => Promise<T>,
   connected: (id: string) => boolean = () => false,
+  excludedApps: () => string[] = () => [],
 ): TaskExecutor {
   return async (task, project, run) => {
     // A press cannot be undone or repeated safely, so a resumed task reports the one that landed.
@@ -259,17 +322,19 @@ export function localExecutor(
         (item) => item.label.toLowerCase() === plan.label.toLowerCase(),
       )
       invariant(
-        matches.length,
+        matches.length !== 0 || (offered.length > 0 && models.qualified('ui-tars')),
         `${application.app} has no control called “${plan.label}”. It offers ${offered
           .slice(0, 12)
           .map((item) => `“${item.label}”`)
           .join(', ')}.`,
       )
       invariant(
-        matches.length === 1,
+        matches.length <= 1,
         `${application.app} has ${matches.length} controls called “${plan.label}”. Say which one you mean.`,
       )
-      const control = matches[0]
+      // One look, then the person decides. A second look at the same screen says the same thing.
+      const control =
+        matches[0] ?? (await locateBySight(native, models, plan.label, offered, excludedApps()))
       const descriptor = {
         bundleId: application.bundleId,
         path: control.path,

@@ -17,7 +17,12 @@ import { Store } from '../src/core/store'
 import { TaskEngine, type TaskExecutor, type TaskRun } from '../src/core/tasks'
 import { hash, now, uid } from '../src/core/util'
 import { Settings, Task, Command } from '../src/shared/contracts'
-import { scopedPath, literalFileContent, localExecutor } from '../src/core/local-task'
+import {
+  scopedPath,
+  literalFileContent,
+  localExecutor,
+  locateBySight,
+} from '../src/core/local-task'
 import { Models } from '../src/core/models'
 import { runCheck } from '../src/providers/workspace'
 import { VaultIndex, chunkNote, looksSecret, noteTitle, splitFrontmatter } from '../src/core/vault'
@@ -886,4 +891,64 @@ test('a notes folder answers beside memory, and memory still answers on its own'
   vault.stop()
   rmSync(dir, { recursive: true, force: true })
   db.close()
+})
+
+test('a seen point is mapped onto a real control, and one that lands on nothing is refused', async () => {
+  const controls = [
+    {
+      path: [1, 0],
+      role: 'AXButton',
+      label: 'Send',
+      enabled: true,
+      x: 500,
+      y: 400,
+      width: 80,
+      height: 30,
+    },
+    {
+      path: [1, 1],
+      role: 'AXButton',
+      label: 'Discard',
+      enabled: true,
+      x: 700,
+      y: 400,
+      width: 80,
+      height: 30,
+    },
+  ]
+  let deletes = 0
+  // The captured area is deliberately not the area asked for, at half scale.
+  const native = (async (method: string) => {
+    if (method === 'context.region')
+      return {
+        imagePath: '/tmp/seen.jpg',
+        width: 640,
+        capturedX: 400,
+        capturedY: 300,
+        capturedWidth: 1280,
+      }
+    if (method === 'ephemeral.delete') return ++deletes
+    throw new Error(`unexpected ${method}`)
+  }) as unknown as Parameters<typeof locateBySight>[0]
+  const seeing = (point: number[]) =>
+    ({ request: async () => ({ points: [point] }) }) as unknown as Models
+  // (70, 57.5) in the image is (540, 415) on screen, which is inside Send.
+  const found = await locateBySight(native, seeing([70, 57.5]), 'Send', controls, [])
+  assert.equal(found.label, 'Send')
+  // A point five hundred away from every control is not a control.
+  await assert.rejects(
+    locateBySight(native, seeing([300, 300]), 'Send', controls, []),
+    /not a control I can press/,
+  )
+  await assert.rejects(
+    locateBySight(
+      native,
+      { request: async () => ({ points: [] }) } as unknown as Models,
+      'Send',
+      controls,
+      [],
+    ),
+    /could not see anything/,
+  )
+  assert.equal(deletes, 3, 'a capture was left behind')
 })

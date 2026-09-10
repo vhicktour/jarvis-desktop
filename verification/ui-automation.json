@@ -1,15 +1,16 @@
 {
-  "generatedAt": "2026-09-10T20:31:58.325Z",
+  "generatedAt": "2026-09-10T21:24:30.152Z",
   "scope": "Accessibility enumeration and the stale-target defence in front of a press. No press was dispatched; every resolve used dryRun.",
   "pressDispatched": false,
   "applications": 18,
   "enumerated": {
     "app": "Messages",
-    "controls": 200
+    "controls": 18,
+    "resolvedAgain": 17
   },
   "dryRunResolved": {
-    "role": "AXMenuBarItem",
-    "depth": 2
+    "role": "AXTextField",
+    "depth": 6
   },
   "refusals": {
     "changedLabel": "A different control is in that position now. Look at the application again.",

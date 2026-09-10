@@ -9,6 +9,8 @@ export class Models {
   process?: JsonProcess
   records = structuredClone(MODELS)
   private qualifying = new Set<string>()
+  // The worker is the authority on which roles it can load; the interface only reflects it.
+  private runnable: string[] = []
   constructor(
     private dataDir: string,
     private workersDir: string,
@@ -48,7 +50,8 @@ export class Models {
       this.changed()
     })
     try {
-      await worker.request('ping', {}, 60_000)
+      const info = await worker.request('ping', {}, 60_000)
+      this.runnable = Array.isArray(info?.roles) ? info.roles : []
       await this.refresh()
     } catch (error) {
       worker.stop()
@@ -65,6 +68,7 @@ export class Models {
       status: manifests[model.id] ? 'installed' : 'absent',
       revision: manifests[model.id]?.revision,
       qualified: manifests[model.id]?.qualified ?? false,
+      installable: this.runnable.includes(model.role),
       error: undefined,
     }))
     this.changed()

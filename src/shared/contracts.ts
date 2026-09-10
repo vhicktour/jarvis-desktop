@@ -291,6 +291,8 @@ export type ModelRecord = {
   progress?: number
   error?: string
   experimental: boolean
+  /** Whether the model worker has a load path for this role at all. */
+  installable: boolean
   qualified: boolean
   license: string
 }

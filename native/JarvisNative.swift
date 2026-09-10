@@ -58,17 +58,26 @@ func axLabel(_ element: AXUIElement) -> String {
 /** Only controls that actually declare a press are listed; a role allowlist would over-promise. */
 func axDescribe(_ element: AXUIElement, path: [Int], depth: Int, into found: inout [[String: Any]], limit: Int) {
     if found.count >= limit || depth > 12 { return }
+    let role = axString(element, kAXRoleAttribute as String) ?? ""
+    // A closed menu's items report an empty frame and would fill the budget with things that
+    // are not on screen. What cannot be seen cannot be pointed at, so neither is listed.
+    if role == (kAXMenuRole as String) { return }
     let label = axLabel(element)
-    if !label.isEmpty, axActions(element).contains(kAXPressAction as String) {
-        let frame = axFrame(element) ?? .zero
+    let frame = axFrame(element) ?? .zero
+    if !label.isEmpty, frame.width >= 1, frame.height >= 1, axActions(element).contains(kAXPressAction as String) {
         found.append([
-            "path": path, "role": axString(element, kAXRoleAttribute as String) ?? "", "label": String(label.prefix(200)),
+            "path": path, "role": role, "label": String(label.prefix(200)),
             "enabled": (axValue(element, kAXEnabledAttribute as String) as? Bool) ?? true,
             "x": frame.minX, "y": frame.minY, "width": frame.width, "height": frame.height,
         ])
     }
-    for (index, child) in axChildren(element).enumerated() {
-        axDescribe(child, path: path + [index], depth: depth + 1, into: &found, limit: limit)
+    let children = axChildren(element).enumerated().map { (index: $0.offset, element: $0.element) }
+    let ordered = depth == 0
+        ? children.filter { axString($0.element, kAXRoleAttribute as String) == (kAXWindowRole as String) }
+            + children.filter { axString($0.element, kAXRoleAttribute as String) != (kAXWindowRole as String) }
+        : children
+    for child in ordered {
+        axDescribe(child.element, path: path + [child.index], depth: depth + 1, into: &found, limit: limit)
     }
 }
 
@@ -269,7 +278,8 @@ final class AudioHistory {
             // Jarvis's own surfaces are excluded so the selection overlay never appears in the shot.
             let filter = SCContentFilter(display: display, excludingWindows: content.windows.filter { isOwn($0) })
             let path = try writeCapture(try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration))
-            return ["windowId": 0, "app": "Selected area", "title": "\(Int(local.width)) × \(Int(local.height)) points", "width": configuration.width, "height": configuration.height, "imagePath": path.path]
+            let captured = local.offsetBy(dx: display.frame.minX, dy: display.frame.minY)
+            return ["windowId": 0, "app": "Selected area", "title": "\(Int(local.width)) × \(Int(local.height)) points", "width": configuration.width, "height": configuration.height, "imagePath": path.path, "capturedX": captured.minX, "capturedY": captured.minY, "capturedWidth": captured.width, "capturedHeight": captured.height]
         case "context.focus":
             guard AXIsProcessTrusted(), let app = NSWorkspace.shared.frontmostApplication, app.bundleIdentifier != "personal.jarvis.desktop", app.localizedName != "Electron" else { return NSNull() }
             let element = AXUIElementCreateApplication(app.processIdentifier)
