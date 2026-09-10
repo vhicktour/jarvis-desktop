@@ -782,3 +782,108 @@ test('a drawn region stays on screen and never shrinks below the capture minimum
   assert.deepEqual(at(0, 0, 5000, 5000), { x: 0, y: 0, width: 1000, height: 800 })
   assert.deepEqual(at(10.4, 10.6, 100.5, 100.4), { x: 10, y: 11, width: 101, height: 100 })
 })
+
+test('a pressed control names itself in the approval and is never pressed twice', async () => {
+  const db = database()
+  let presses = 0
+  let plans = 0
+  let taskId = ''
+  const model = {
+    request: async () => {
+      plans++
+      return {
+        text: JSON.stringify({ action: 'press_control', app: 'Fixture App', label: 'Send' }),
+      }
+    },
+  } as unknown as Models
+  const controls = [
+    {
+      path: [0, 2],
+      role: 'AXButton',
+      label: 'Send',
+      enabled: true,
+      x: 10,
+      y: 20,
+      width: 80,
+      height: 24,
+    },
+    {
+      path: [0, 3],
+      role: 'AXButton',
+      label: 'Cancel',
+      enabled: true,
+      x: 100,
+      y: 20,
+      width: 80,
+      height: 24,
+    },
+  ]
+  const engine: TaskEngine = new TaskEngine(
+    db.store,
+    localExecutor(
+      model,
+      (async (method: string, params: any) => {
+        if (method === 'ui.applications')
+          return [{ bundleId: 'com.example.fixture', app: 'Fixture App' }]
+        if (method === 'ui.elements') return { elements: controls }
+        if (method !== 'ui.press') throw new Error(`unexpected ${method}`)
+        if (params.dryRun) return { resolved: true, pressed: false }
+        presses++
+        // Stop the task the instant the press lands, the way a crash or a pause would.
+        engine.control(taskId, 'pause')
+        return { resolved: true, pressed: true, app: 'Fixture App', label: 'Send' }
+      }) as any,
+      (id) => id === 'automation',
+    ),
+    () => {},
+  )
+  const task = engine.create('Press Send in Fixture App', 'local', undefined, budget)
+  taskId = task.id
+  await until(() => db.store.approvals().length === 1, 'No press approval was requested')
+  const approval = db.store.approvals()[0]
+  const proposal = approval.proposal
+  assert.equal(proposal.tool, 'ui.press')
+  assert.equal(proposal.target, 'Fixture App / Send')
+  assert.equal(proposal.description, 'Press “Send” in Fixture App')
+  assert.deepEqual(
+    proposal.arguments.path,
+    [0, 2],
+    'the approval did not bind the resolved control',
+  )
+  assert.equal(presses, 0, 'the control was pressed before it was approved')
+  engine.decide(approval.id, 'approved', proposal.argumentHash)
+  await until(() => engine.activeCount === 0, 'The press did not settle')
+  assert.equal(db.store.getTask(task.id).state, 'paused')
+  engine.control(task.id, 'resume')
+  await until(() => engine.activeCount === 0, 'The resumed task did not finish')
+  assert.equal(db.store.getTask(task.id).state, 'completed')
+  assert.equal(presses, 1, 'the control was pressed again on resume')
+  assert.equal(plans, 1, 'the resumed task asked the model to plan again')
+  assert.match(db.store.receipts()[0].summary, /not pressed a second time/)
+  await engine.shutdown()
+  db.close()
+})
+
+test('a notes folder answers beside memory, and memory still answers on its own', async () => {
+  const db = database()
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'jarvis-beside-')))
+  writeFileSync(join(dir, 'gateway.md'), '# Gateway\n\nThe staging gateway listens on port 8443.\n')
+  db.store.saveMemory(memory('The staging gateway belongs to the platform team.'))
+  const vault = new VaultIndex(db.store, { records: [] } as unknown as Models, () => {})
+  await vault.connect(dir)
+  await vault.sync()
+  // One question, two kinds of source: something remembered and something written down.
+  assert.equal(db.store.searchMemory('staging gateway', 'personal').length, 1)
+  assert.equal(db.store.searchNotes('staging gateway', 'personal').length, 1)
+  assert.match(db.store.searchNotes('staging gateway', 'personal')[0].text, /8443/)
+  vault.forget()
+  assert.equal(db.store.searchNotes('staging gateway', 'personal').length, 0)
+  assert.equal(
+    db.store.searchMemory('staging gateway', 'personal').length,
+    1,
+    'forgetting the notes took memory with it',
+  )
+  vault.stop()
+  rmSync(dir, { recursive: true, force: true })
+  db.close()
+})

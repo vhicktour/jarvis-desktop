@@ -279,6 +279,11 @@ final class AudioHistory {
             var origin = CGPoint.zero; var dimensions = CGSize.zero
             guard AXValueGetValue(pos as! AXValue, .cgPoint, &origin), AXValueGetValue(size as! AXValue, .cgSize, &dimensions) else { return NSNull() }
             return ["x": origin.x, "y": origin.y, "width": dimensions.width, "height": dimensions.height, "bundleId": app.bundleIdentifier ?? ""]
+        case "ui.applications":
+            guard AXIsProcessTrusted() else { throw fail("Allow Accessibility for Jarvis in Privacy & access first.") }
+            return NSWorkspace.shared.runningApplications
+                .filter { $0.activationPolicy == .regular && $0.bundleIdentifier != "personal.jarvis.desktop" && $0.bundleIdentifier != nil }
+                .map { ["bundleId": $0.bundleIdentifier ?? "", "app": $0.localizedName ?? "Application", "frontmost": $0.isActive] }
         case "ui.elements":
             guard AXIsProcessTrusted() else { throw fail("Allow Accessibility for Jarvis in Privacy & access first.") }
             let wanted = p["bundleId"] as? String

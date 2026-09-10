@@ -1,0 +1,23 @@
+{
+  "generatedAt": "2026-09-10T20:31:58.325Z",
+  "scope": "Accessibility enumeration and the stale-target defence in front of a press. No press was dispatched; every resolve used dryRun.",
+  "pressDispatched": false,
+  "applications": 18,
+  "enumerated": {
+    "app": "Messages",
+    "controls": 200
+  },
+  "dryRunResolved": {
+    "role": "AXMenuBarItem",
+    "depth": 2
+  },
+  "refusals": {
+    "changedLabel": "A different control is in that position now. Look at the application again.",
+    "changedRole": "A different control is in that position now. Look at the application again.",
+    "movedControl": "The control is no longer where it was. Look at the application again.",
+    "jarvisItself": "Jarvis does not press its own controls.",
+    "unknownApplication": "That application is no longer running.",
+    "enumeratingJarvis": "Choose a running application other than Jarvis."
+  },
+  "passed": true
+}

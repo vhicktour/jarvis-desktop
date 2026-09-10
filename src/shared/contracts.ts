@@ -262,6 +262,7 @@ export type Routine = z.infer<typeof Routine>
 export type ConnectionId =
   | 'codex'
   | 'claude'
+  | 'automation'
   | 'apple-calendar'
   | 'apple-reminders'
   | 'apple-mail'
@@ -423,6 +424,7 @@ export const Command = z.discriminatedUnion('type', [
     id: z.enum([
       'codex',
       'claude',
+      'automation',
       'apple-calendar',
       'apple-reminders',
       'apple-mail',

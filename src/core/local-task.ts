@@ -57,8 +57,23 @@ const Plan = z.discriminatedUnion('action', [
     calendarId: z.string(),
     notes: z.string().max(5000).default(''),
   }),
+  z.object({
+    action: z.literal('press_control'),
+    app: z.string().trim().min(1).max(120),
+    label: z.string().trim().min(1).max(200),
+  }),
   z.object({ action: z.literal('answer'), text: z.string().min(1).max(30_000) }),
 ])
+type Control = {
+  path: number[]
+  role: string
+  label: string
+  enabled: boolean
+  x: number
+  y: number
+  width: number
+  height: number
+}
 export function literalFileContent(objective: string): string | undefined {
   // Preserve a directly dictated or typed literal instead of asking a model to rewrite it.
   if (objective.includes('\n') || !/^(?:please\s+)?create\s+(?:a\s+)?file\b/i.test(objective))
@@ -74,6 +89,22 @@ export function localExecutor(
   connected: (id: string) => boolean = () => false,
 ): TaskExecutor {
   return async (task, project, run) => {
+    // A press cannot be undone or repeated safely, so a resumed task reports the one that landed.
+    const completedPress = run.succeeded('ui.press').at(-1)
+    if (completedPress) {
+      const result = completedPress.result as { app?: string; label?: string }
+      run.evidence({
+        kind: 'observation',
+        label: `Pressed ${result.label} in ${result.app}`,
+        value: JSON.stringify(result, null, 2),
+        hash: hash(result),
+        verified: true,
+      })
+      return {
+        summary: `Pressed “${result.label}” in ${result.app}. It was not pressed a second time.`,
+        limitations: ['The application accepted the press. What it did next was not verified.'],
+      }
+    }
     const completedFile = run.succeeded('file.create').at(-1)
     if (completedFile) {
       invariant(
@@ -101,7 +132,11 @@ export function localExecutor(
     const calendarIntent = /(?:calendar|event|appointment|meeting)/i.test(task.objective)
     const calendars: { id: string; title: string; writable: boolean }[] =
       calendarIntent && connected('apple-calendar') && native ? await native('apple.calendars') : []
-    const nativeActions = `${connected('apple-reminders') ? ' For an explicit reminder request use {"action":"create_reminder","title":"exact reminder title","notes":"optional notes"}.' : ''}${calendars.length ? ` For an explicit calendar change use {"action":"create_event","title":"exact title","start":"ISO UTC timestamp","end":"ISO UTC timestamp","calendarId":"selected ID","notes":"optional notes"}. Available calendars: ${JSON.stringify(calendars)}. Ask for clarification if the destination or dates are ambiguous.` : ''}`
+    const pressing =
+      native && connected('automation')
+        ? ' When the user explicitly asks for a control to be pressed in an application, use {"action":"press_control","app":"exact application name","label":"exact control label"}. Never press anything they did not ask for.'
+        : ''
+    const nativeActions = `${connected('apple-reminders') ? ' For an explicit reminder request use {"action":"create_reminder","title":"exact reminder title","notes":"optional notes"}.' : ''}${calendars.length ? ` For an explicit calendar change use {"action":"create_event","title":"exact title","start":"ISO UTC timestamp","end":"ISO UTC timestamp","calendarId":"selected ID","notes":"optional notes"}. Available calendars: ${JSON.stringify(calendars)}. Ask for clarification if the destination or dates are ambiguous.` : ''}${pressing}`
     const response = await models.request(
       'chat',
       {
@@ -201,6 +236,71 @@ export function localExecutor(
       return {
         summary: `Created “${plan.title}” in ${target.title} and verified it.`,
         limitations: [],
+      }
+    }
+    if (plan.action === 'press_control') {
+      invariant(native, 'The native connector is unavailable.')
+      invariant(
+        connected('automation'),
+        'Connect “Controls you approve” in Settings before pressing anything.',
+      )
+      run.stage('Finding that control')
+      const applications = await native<{ bundleId: string; app: string }[]>('ui.applications')
+      const application = applications.find(
+        (item) => item.app.toLowerCase() === plan.app.toLowerCase(),
+      )
+      invariant(application, `I could not find ${plan.app} running. Open it first.`)
+      const listing = await native<{ elements: Control[] }>('ui.elements', {
+        bundleId: application.bundleId,
+        limit: 400,
+      })
+      const offered = listing.elements.filter((item) => item.enabled)
+      const matches = offered.filter(
+        (item) => item.label.toLowerCase() === plan.label.toLowerCase(),
+      )
+      invariant(
+        matches.length,
+        `${application.app} has no control called “${plan.label}”. It offers ${offered
+          .slice(0, 12)
+          .map((item) => `“${item.label}”`)
+          .join(', ')}.`,
+      )
+      invariant(
+        matches.length === 1,
+        `${application.app} has ${matches.length} controls called “${plan.label}”. Say which one you mean.`,
+      )
+      const control = matches[0]
+      const descriptor = {
+        bundleId: application.bundleId,
+        path: control.path,
+        role: control.role,
+        label: control.label,
+      }
+      // A press acts on the element, never a coordinate, so identity is the target. The helper
+      // re-walks the path and re-checks role, label and enabled state immediately before acting.
+      const targetHash = hash(descriptor)
+      await native('ui.press', { ...descriptor, dryRun: true })
+      const approval = await run.authorize(
+        'ui.press',
+        descriptor,
+        `${application.app} / ${control.label}`,
+        targetHash,
+        `Press “${control.label}” in ${application.app}`,
+      )
+      run.stage('Rechecking that control')
+      await native('ui.press', { ...descriptor, dryRun: true })
+      const observed = await run.effect(approval, targetHash, () => native('ui.press', descriptor))
+      invariant(observed?.pressed === true, 'The application did not accept the press.')
+      run.evidence({
+        kind: 'observation',
+        label: `Pressed ${control.label} in ${application.app}`,
+        value: JSON.stringify(observed, null, 2),
+        hash: hash(observed),
+        verified: true,
+      })
+      return {
+        summary: `Pressed “${control.label}” in ${application.app}.`,
+        limitations: ['The application accepted the press. What it did next was not verified.'],
       }
     }
     invariant(project?.trusted, 'Select a repository before creating a file.')

@@ -17,6 +17,13 @@ export const CONNECTIONS: Connection[] = [
     capabilities: ['Review', 'Reasoning'],
   },
   {
+    id: 'automation',
+    name: 'Controls you approve',
+    description: 'Press a named control in an application, after you approve the exact one.',
+    status: 'disconnected',
+    capabilities: ['Accessibility'],
+  },
+  {
     id: 'apple-calendar',
     name: 'Apple Calendar',
     description: 'Your schedule, with changes you approve.',

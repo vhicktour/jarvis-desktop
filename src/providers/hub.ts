@@ -55,7 +55,7 @@ export class ProviderHub {
           this.status(id, 'error', safeError(error))
         }
       }
-      if (id.startsWith('apple-') || id === 'browser')
+      if (id.startsWith('apple-') || id === 'browser' || id === 'automation')
         this.status(id, 'disconnected', 'Reconnect to verify macOS permission')
     }
   }
@@ -85,6 +85,16 @@ export class ProviderHub {
       } else if (id === 'google') {
         await this.google.connect(config.clientId, config.clientSecret)
         this.status(id, 'connected', 'Gmail, Calendar, and Drive · read-only access')
+      } else if (id === 'automation') {
+        const permissions = await this.host('native', {
+          method: 'permission.request',
+          params: { permission: 'accessibility' },
+        })
+        invariant(
+          permissions.accessibility,
+          'Allow Accessibility for Jarvis in System Settings, then connect again.',
+        )
+        this.status(id, 'connected', 'Named controls · every press approved individually')
       } else if (id === 'apple-calendar' || id === 'apple-reminders') {
         const permissions = await this.host('native', {
           method: 'permission.request',
@@ -180,6 +190,7 @@ export class ProviderHub {
       return this.mcp.listTools()
     }
     const methods: Record<string, string> = {
+      automation: 'ui.applications',
       'apple-calendar': 'apple.events',
       'apple-reminders': 'apple.reminders',
       'apple-mail': 'apple.mail.selected',
