@@ -1,0 +1,410 @@
+{
+  "generatedAt": "2026-09-10T18:16:35.254Z",
+  "rawAuditPassed": false,
+  "detectorLimitation": "The audit lowercases JSX tag names and ignores React Aria onPress. Shared Button forwards props to AriaButton; Select is imported from react-aria-components.",
+  "inspected": [
+    {
+      "file": "src/renderer/src/Panels.tsx",
+      "line": 102,
+      "tag": "Button",
+      "attributes": [
+        "key",
+        "variant",
+        "className",
+        "onPress"
+      ]
+    },
+    {
+      "file": "src/renderer/src/Panels.tsx",
+      "line": 117,
+      "tag": "Button",
+      "attributes": [
+        "variant",
+        "className",
+        "onPress"
+      ]
+    },
+    {
+      "file": "src/renderer/src/Panels.tsx",
+      "line": 188,
+      "tag": "Button",
+      "attributes": [
+        "variant",
+        "className",
+        "aria-label",
+        "isDisabled",
+        "busy",
+        "onPress"
+      ]
+    },
+    {
+      "file": "src/renderer/src/Panels.tsx",
+      "line": 373,
+      "tag": "Button",
+      "attributes": [
+        "variant",
+        "onPress"
+      ]
+    },
+    {
+      "file": "src/renderer/src/Panels.tsx",
+      "line": 399,
+      "tag": "Button",
+      "attributes": [
+        "isDisabled",
+        "onPress"
+      ]
+    },
+    {
+      "file": "src/renderer/src/Panels.tsx",
+      "line": 424,
+      "tag": "Button",
+      "attributes": [
+        "onPress"
+      ]
+    },
+    {
+      "file": "src/renderer/src/Panels.tsx",
+      "line": 437,
+      "tag": "Button",
+      "attributes": [
+        "isDisabled",
+        "onPress"
+      ]
+    },
+    {
+      "file": "src/renderer/src/Panels.tsx",
+      "line": 461,
+      "tag": "Button",
+      "attributes": [
+        "variant",
+        "onPress"
+      ]
+    },
+    {
+      "file": "src/renderer/src/Panels.tsx",
+      "line": 507,
+      "tag": "Button",
+      "attributes": [
+        "variant",
+        "onPress"
+      ]
+    },
+    {
+      "file": "src/renderer/src/Panels.tsx",
+      "line": 520,
+      "tag": "Button",
+      "attributes": [
+        "variant",
+        "busy",
+        "onPress"
+      ]
+    },
+    {
+      "file": "src/renderer/src/Panels.tsx",
+      "line": 569,
+      "tag": "Button",
+      "attributes": [
+        "isDisabled",
+        "onPress"
+      ]
+    },
+    {
+      "file": "src/renderer/src/Panels.tsx",
+      "line": 580,
+      "tag": "Button",
+      "attributes": [
+        "variant",
+        "onPress"
+      ]
+    },
+    {
+      "file": "src/renderer/src/Panels.tsx",
+      "line": 596,
+      "tag": "Button",
+      "attributes": [
+        "variant",
+        "onPress"
+      ]
+    },
+    {
+      "file": "src/renderer/src/Panels.tsx",
+      "line": 610,
+      "tag": "Button",
+      "attributes": [
+        "key",
+        "variant",
+        "className",
+        "onPress"
+      ]
+    },
+    {
+      "file": "src/renderer/src/Panels.tsx",
+      "line": 629,
+      "tag": "Button",
+      "attributes": [
+        "busy",
+        "onPress"
+      ]
+    },
+    {
+      "file": "src/renderer/src/settings/Connections.tsx",
+      "line": 68,
+      "tag": "Button",
+      "attributes": [
+        "variant",
+        "busy",
+        "onPress"
+      ]
+    },
+    {
+      "file": "src/renderer/src/settings/Connections.tsx",
+      "line": 92,
+      "tag": "Button",
+      "attributes": [
+        "onPress"
+      ]
+    },
+    {
+      "file": "src/renderer/src/settings/Connections.tsx",
+      "line": 100,
+      "tag": "Button",
+      "attributes": [
+        "variant",
+        "onPress"
+      ]
+    },
+    {
+      "file": "src/renderer/src/settings/Connections.tsx",
+      "line": 145,
+      "tag": "Button",
+      "attributes": [
+        "variant",
+        "busy",
+        "onPress"
+      ]
+    },
+    {
+      "file": "src/renderer/src/settings/Connections.tsx",
+      "line": 163,
+      "tag": "Button",
+      "attributes": [
+        "onPress"
+      ]
+    },
+    {
+      "file": "src/renderer/src/settings/Connections.tsx",
+      "line": 251,
+      "tag": "Button",
+      "attributes": [
+        "variant",
+        "onPress"
+      ]
+    },
+    {
+      "file": "src/renderer/src/settings/Connections.tsx",
+      "line": 269,
+      "tag": "Button",
+      "attributes": [
+        "onPress"
+      ]
+    },
+    {
+      "file": "src/renderer/src/settings/Diagnostics.tsx",
+      "line": 20,
+      "tag": "Button",
+      "attributes": [
+        "onPress"
+      ]
+    },
+    {
+      "file": "src/renderer/src/settings/Diagnostics.tsx",
+      "line": 73,
+      "tag": "Button",
+      "attributes": [
+        "onPress"
+      ]
+    },
+    {
+      "file": "src/renderer/src/settings/Diagnostics.tsx",
+      "line": 81,
+      "tag": "Button",
+      "attributes": [
+        "variant",
+        "onPress"
+      ]
+    },
+    {
+      "file": "src/renderer/src/settings/Memory.tsx",
+      "line": 37,
+      "tag": "Button",
+      "attributes": [
+        "variant",
+        "onPress"
+      ]
+    },
+    {
+      "file": "src/renderer/src/settings/Memory.tsx",
+      "line": 73,
+      "tag": "Button",
+      "attributes": [
+        "variant",
+        "onPress"
+      ]
+    },
+    {
+      "file": "src/renderer/src/settings/Memory.tsx",
+      "line": 76,
+      "tag": "Button",
+      "attributes": [
+        "variant",
+        "isDisabled",
+        "onPress"
+      ]
+    },
+    {
+      "file": "src/renderer/src/settings/Memory.tsx",
+      "line": 113,
+      "tag": "Button",
+      "attributes": [
+        "onPress"
+      ]
+    },
+    {
+      "file": "src/renderer/src/settings/Models.tsx",
+      "line": 57,
+      "tag": "Button",
+      "attributes": [
+        "isDisabled",
+        "busy",
+        "onPress"
+      ]
+    },
+    {
+      "file": "src/renderer/src/settings/Models.tsx",
+      "line": 106,
+      "tag": "Button",
+      "attributes": [
+        "variant",
+        "onPress"
+      ]
+    },
+    {
+      "file": "src/renderer/src/settings/Privacy.tsx",
+      "line": 69,
+      "tag": "Button",
+      "attributes": [
+        "onPress"
+      ]
+    },
+    {
+      "file": "src/renderer/src/settings/Privacy.tsx",
+      "line": 120,
+      "tag": "Button",
+      "attributes": [
+        "onPress"
+      ]
+    },
+    {
+      "file": "src/renderer/src/settings/Routines.tsx",
+      "line": 45,
+      "tag": "Button",
+      "attributes": [
+        "variant",
+        "onPress"
+      ]
+    },
+    {
+      "file": "src/renderer/src/settings/Routines.tsx",
+      "line": 120,
+      "tag": "Button",
+      "attributes": [
+        "variant",
+        "onPress"
+      ]
+    },
+    {
+      "file": "src/renderer/src/settings/Routines.tsx",
+      "line": 123,
+      "tag": "Button",
+      "attributes": [
+        "variant",
+        "isDisabled",
+        "onPress"
+      ]
+    },
+    {
+      "file": "src/renderer/src/settings/Routines.tsx",
+      "line": 151,
+      "tag": "Button",
+      "attributes": [
+        "isDisabled",
+        "onPress"
+      ]
+    },
+    {
+      "file": "src/renderer/src/settings/Routines.tsx",
+      "line": 159,
+      "tag": "Button",
+      "attributes": [
+        "variant",
+        "onPress"
+      ]
+    },
+    {
+      "file": "src/renderer/src/settings/Voice.tsx",
+      "line": 19,
+      "tag": "Button",
+      "attributes": [
+        "onPress",
+        "busy"
+      ]
+    },
+    {
+      "file": "src/renderer/src/settings/Voice.tsx",
+      "line": 75,
+      "tag": "Button",
+      "attributes": [
+        "onPress"
+      ]
+    },
+    {
+      "file": "src/renderer/src/ui.tsx",
+      "line": 48,
+      "tag": "Button",
+      "attributes": [
+        "spread props",
+        "variant",
+        "className",
+        "aria-label"
+      ]
+    },
+    {
+      "file": "src/renderer/src/ui.tsx",
+      "line": 245,
+      "tag": "Button",
+      "attributes": [
+        "onPress"
+      ]
+    },
+    {
+      "file": "src/renderer/src/ui.tsx",
+      "line": 246,
+      "tag": "Button",
+      "attributes": [
+        "variant",
+        "onPress"
+      ]
+    },
+    {
+      "file": "src/renderer/src/ui.tsx",
+      "line": 125,
+      "tag": "Select",
+      "attributes": [
+        "className",
+        "selectedKey",
+        "onSelectionChange"
+      ]
+    }
+  ]
+}

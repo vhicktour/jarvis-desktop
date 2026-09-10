@@ -1,0 +1,109 @@
+{
+  "generatedAt": "2026-09-10T17:20:52.039Z",
+  "kind": "synthesized-audio-fixture",
+  "microphoneRouteTested": false,
+  "input": "Create a file named receipt.txt containing exactly: A quietly capable companion.",
+  "transcript": "Create a file named receipt TXT containing exactly a quietly capable companion.",
+  "elapsedSeconds": 23.203990458,
+  "task": {
+    "id": "87667ef5-bbc2-4291-979c-36d82ba95f94",
+    "revision": 1,
+    "objective": "Create a file named receipt TXT containing exactly a quietly capable companion.",
+    "state": "completed",
+    "provider": "local",
+    "stage": "Created receipt.txt and checked its contents.",
+    "scope": "fixture",
+    "createdAt": "2026-09-10T17:20:44.377Z",
+    "updatedAt": "2026-09-10T17:20:51.946Z",
+    "budget": {
+      "maxSteps": 30,
+      "timeoutMs": 1200000,
+      "maxCostUsd": null
+    },
+    "providerIds": {},
+    "evidence": [
+      {
+        "id": "2c5331f7-e546-446b-a1ba-4edaeb694cce",
+        "kind": "file",
+        "label": "Verified receipt.txt",
+        "value": "a quietly capable companion.",
+        "hash": "577ff0496d11a65e7b451d1ee1a61d0cc930c148eff9125e2c846bbfaa26ae65",
+        "revision": 1,
+        "verified": true
+      }
+    ],
+    "completedEffects": [
+      "Create receipt.txt"
+    ],
+    "constraints": [],
+    "steps": 2,
+    "costUsd": null
+  },
+  "receipt": {
+    "id": "3abef99a-341b-459d-8d2c-e44e0329f8a9",
+    "taskId": "87667ef5-bbc2-4291-979c-36d82ba95f94",
+    "revision": 1,
+    "status": "completed",
+    "objective": "Create a file named receipt TXT containing exactly a quietly capable companion.",
+    "provider": "local",
+    "createdAt": "2026-09-10T17:20:51.947Z",
+    "evidence": [
+      {
+        "id": "2c5331f7-e546-446b-a1ba-4edaeb694cce",
+        "kind": "file",
+        "label": "Verified receipt.txt",
+        "value": "a quietly capable companion.",
+        "hash": "577ff0496d11a65e7b451d1ee1a61d0cc930c148eff9125e2c846bbfaa26ae65",
+        "revision": 1,
+        "verified": true
+      }
+    ],
+    "effects": [
+      "Create receipt.txt"
+    ],
+    "limitations": [],
+    "summary": "Created receipt.txt and checked its contents.",
+    "costUsd": null
+  },
+  "files": [
+    {
+      "id": "2c5331f7-e546-446b-a1ba-4edaeb694cce",
+      "kind": "file",
+      "label": "Verified receipt.txt",
+      "value": "a quietly capable companion.",
+      "hash": "577ff0496d11a65e7b451d1ee1a61d0cc930c148eff9125e2c846bbfaa26ae65",
+      "revision": 1,
+      "verified": true
+    }
+  ],
+  "models": [
+    {
+      "id": "parakeet",
+      "revision": "ed2b7e8c15f9aaa0b5772e2efb986255eaef7e15"
+    },
+    {
+      "id": "kokoro",
+      "revision": "a71e4d38b236d968966a2002c4c895dbd12b1c3c"
+    },
+    {
+      "id": "qwen",
+      "revision": "0e7ffd5c629ef7719d4cbc04069232580bfa9d9c"
+    },
+    {
+      "id": "embedding",
+      "revision": "6c3ae70858513f1a78e9cdca3cae330d9075cd2a"
+    },
+    {
+      "id": "whisper",
+      "revision": "45f3915923c7a79a5a5b5a7d909d39aeb0e5630e"
+    },
+    {
+      "id": "silero",
+      "revision": "e71cae966052b992a7eca6b17738916ce0eca4ec"
+    },
+    {
+      "id": "smart-turn",
+      "revision": "f766f81d3cfdf7737ac64aad813d91bbfd56bf93"
+    }
+  ]
+}

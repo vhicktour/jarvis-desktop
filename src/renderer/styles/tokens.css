@@ -1,0 +1,18 @@
+/* Generated from DESIGN.md by scripts/tokens.mjs. */
+:root {
+  --color-ink: #08121A;
+  --color-pearl: #EAF7FF;
+  --color-steel: #91AAB8;
+  --color-cyan: #8EE7F5;
+  --color-amber: #D5AF74;
+  --color-coral: #EF8C83;
+  --font-display: Sora, sans-serif;
+  --font-body: -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: SFMono-Regular, ui-monospace, monospace;
+  --radius-control: 12px;
+  --radius-panel: 28px;
+  --radius-core: 36px;
+  --space-unit: 4px;
+  --space-inset: 24px;
+  --space-section: 32px;
+}

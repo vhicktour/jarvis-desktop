@@ -1,0 +1,47 @@
+appId: personal.jarvis.desktop
+afterPack: scripts/verify-bundle.cjs
+productName: Jarvis
+directories:
+  output: dist
+files:
+  - out/**/*
+  - package.json
+asarUnpack:
+  - '**/*.node'
+  - node_modules/@anthropic-ai/claude-agent-sdk/**
+  - node_modules/@anthropic-ai/claude-agent-sdk-*/**
+  - node_modules/@openai/codex*/**
+extraResources:
+  - from: native/build/JarvisNative
+    to: native/JarvisNative
+  - from: native/build/JarvisKeychain
+    to: native/JarvisKeychain
+  - from: native/build/JarvisAutomation
+    to: native/JarvisAutomation
+  - from: workers
+    to: workers
+    filter:
+      - '**/*'
+      - '!**/__pycache__/**'
+      - '!.venv/**'
+      - '!runtime/cpython-3.12-macos-aarch64-none'
+mac:
+  icon: native/build/Jarvis.icns
+  category: public.app-category.productivity
+  minimumSystemVersion: '26.0'
+  target:
+    - target: dmg
+      arch: arm64
+    - target: zip
+      arch: arm64
+  hardenedRuntime: true
+  sign: scripts/sign-macos.cjs
+  entitlements: native/entitlements.plist
+  entitlementsInherit: native/entitlements.plist
+  extendInfo:
+    NSMicrophoneUsageDescription: Jarvis listens when you start a voice conversation.
+    NSScreenCaptureUsageDescription: Jarvis uses the window you select to understand what you share.
+    NSAppleEventsUsageDescription: Jarvis works with the apps you explicitly connect.
+    NSCalendarsFullAccessUsageDescription: Jarvis reads your selected calendars and changes events you approve.
+    NSRemindersFullAccessUsageDescription: Jarvis reads and updates reminders you approve.
+    NSSpeechRecognitionUsageDescription: Jarvis transcribes the speech you choose to share.

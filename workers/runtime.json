@@ -1,0 +1,5 @@
+{
+  "version": 1,
+  "python": "runtime/cpython-3.12.12-macos-aarch64-none/bin/python3.12",
+  "requirements": "requirements.lock"
+}

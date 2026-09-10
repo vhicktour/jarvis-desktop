@@ -1,0 +1,77 @@
+{
+  "generatedAt": "2026-09-10T17:58:01.189Z",
+  "microphoneRouteTested": false,
+  "tts": {
+    "duration": 3.85,
+    "sampleRate": 24000
+  },
+  "parakeet": {
+    "text": "Good evening, I am Jarvis, ready when you are.",
+    "elapsedSeconds": 4.695963541
+  },
+  "whisper": {
+    "text": "Good evening, I am Jarvis, ready when you are.",
+    "elapsedSeconds": 0.9145314589999998
+  },
+  "reasoning": {
+    "text": "4"
+  },
+  "embedding": {
+    "dimensions": 1024,
+    "count": 2
+  },
+  "endpointSpeech": {
+    "hasSpeech": true,
+    "speechAtEnd": false,
+    "complete": false,
+    "probability": 0.59721440076828
+  },
+  "endpointSilence": {
+    "hasSpeech": false,
+    "speechAtEnd": false,
+    "complete": false,
+    "probability": 0
+  },
+  "endpointQualification": {
+    "passed": false,
+    "detail": "Single synthesized fixture only. Automatic endpointing stays experimental and off by default."
+  },
+  "memory": {
+    "version": 1,
+    "mlx": true,
+    "memory": 335670066,
+    "peakMemory": 3246019938
+  },
+  "modelRevisions": [
+    {
+      "id": "parakeet",
+      "revision": "ed2b7e8c15f9aaa0b5772e2efb986255eaef7e15"
+    },
+    {
+      "id": "kokoro",
+      "revision": "a71e4d38b236d968966a2002c4c895dbd12b1c3c"
+    },
+    {
+      "id": "qwen",
+      "revision": "0e7ffd5c629ef7719d4cbc04069232580bfa9d9c"
+    },
+    {
+      "id": "embedding",
+      "revision": "6c3ae70858513f1a78e9cdca3cae330d9075cd2a"
+    },
+    {
+      "id": "whisper",
+      "revision": "45f3915923c7a79a5a5b5a7d909d39aeb0e5630e"
+    },
+    {
+      "id": "silero",
+      "revision": "e71cae966052b992a7eca6b17738916ce0eca4ec"
+    },
+    {
+      "id": "smart-turn",
+      "revision": "f766f81d3cfdf7737ac64aad813d91bbfd56bf93"
+    }
+  ],
+  "passed": true,
+  "scope": "Required local speech, reasoning, embedding, and endpoint interface smoke checks. Semantic endpoint accuracy is reported separately."
+}

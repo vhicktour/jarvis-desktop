@@ -1,0 +1,13 @@
+node_modules/
+out/
+dist/
+native/build/
+workers/.venv/
+workers/runtime/
+workers/__pycache__/
+.DS_Store
+*.log
+.env
+test-results/
+playwright-report/
+verification/private/

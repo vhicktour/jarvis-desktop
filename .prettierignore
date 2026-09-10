@@ -1,0 +1,8 @@
+# Generated from DESIGN.md; edit the token source instead.
+src/renderer/styles/tokens.css
+src/shared/design-tokens.json
+out/
+dist/
+node_modules/
+workers/runtime/
+verification/

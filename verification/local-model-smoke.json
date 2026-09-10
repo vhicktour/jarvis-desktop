@@ -1,0 +1,28 @@
+{
+  "time": "2026-09-10T16:58:32.570Z",
+  "results": [
+    {
+      "method": "asr",
+      "seconds": 17.252588874999997,
+      "value": {
+        "text": "Good evening, I am Jarvis, ready when you are."
+      }
+    },
+    {
+      "method": "chat",
+      "seconds": 8.286988624999998,
+      "value": {
+        "text": "<think>\nThinking Process:\n\n1.  **Analyze the Request:**\n    *   Task: Answer the question \"What is 2"
+      }
+    },
+    {
+      "method": "embed",
+      "seconds": 0.9388712080000005,
+      "value": {
+        "vectors": 2,
+        "dimension": 1024,
+        "revision": "6c3ae70858513f1a78e9cdca3cae330d9075cd2a"
+      }
+    }
+  ]
+}
