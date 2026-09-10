@@ -21,8 +21,13 @@ TEMP.mkdir(parents=True, exist_ok=True, mode=0o700)
 CANCELLED = set()
 PENDING = set()
 EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-LOADED = None
-LOADED_KEY = None
+# Weights stay loaded between turns. A spoken exchange moves between transcription, recall,
+# reasoning and speech every single time, and reloading them costs far more than holding them:
+# 7.25 s of reloading against 0.45 s of the actual work, measured on this Mac. What is held is
+# bounded, and the least recently used model leaves first when the next one will not fit.
+RESIDENT_BUDGET = 4_500_000_000
+RESIDENT = {}
+RESIDENT_BYTES = {}
 CATALOG = json.loads(Path(sys.argv[2]).read_text())
 # One fixed phrase renders every cross-model check, so results stay comparable between runs.
 QUALIFY_TEXT = "Good evening. I am Jarvis. Ready when you are."
@@ -56,46 +61,59 @@ def model_path(model_id):
         raise ValueError("Install this local model in Settings first.")
     return str(MODELS / model_id / "weights")
 
-def load(model_id, role):
-    global LOADED, LOADED_KEY
-    key = (model_id, role)
-    if LOADED_KEY == key:
-        return LOADED
-    LOADED = None
-    LOADED_KEY = None
-    # mlx-whisper caches its model separately; keep the one-heavy-model policy.
-    if "mlx_whisper.transcribe" in sys.modules:
+def weights_bytes(model_id):
+    return sum(f.stat().st_size for f in (MODELS / model_id / "weights").rglob("*") if f.is_file())
+
+def release(key):
+    RESIDENT.pop(key, None)
+    RESIDENT_BYTES.pop(key, None)
+    # mlx-whisper holds its own module-level reference; dropping ours is not enough to free it.
+    if key[0] == "whisper" and "mlx_whisper.transcribe" in sys.modules:
         holder = sys.modules["mlx_whisper.transcribe"].ModelHolder
         holder.model = None
         holder.model_path = None
     gc.collect()
+
+def make_room(needed, mx):
+    while RESIDENT and sum(RESIDENT_BYTES.values()) + needed > RESIDENT_BUDGET:
+        release(next(iter(RESIDENT)))
+        mx.clear_cache()
+
+def load(model_id, role):
+    key = (model_id, role)
+    if key in RESIDENT:
+        RESIDENT[key] = RESIDENT.pop(key)  # most recently used moves to the end
+        return RESIDENT[key]
     import mlx.core as mx
     mx.set_cache_limit(256 * 1024**2)
     mx.set_memory_limit(6 * 1024**3)
-    mx.clear_cache()
     path = model_path(model_id)
+    size = weights_bytes(model_id)
+    make_room(size, mx)
     os.environ["HF_HUB_OFFLINE"] = "1"
+    before = mx.get_active_memory()
     if role == "asr":
         if model_id == "whisper":
             from mlx_whisper.transcribe import ModelHolder
-            LOADED = ModelHolder.get_model(path, mx.float16)
+            model = ModelHolder.get_model(path, mx.float16)
         else:
             from mlx_audio.stt.utils import load_model
-            LOADED = load_model(path, model_type="parakeet")
+            model = load_model(path, model_type="parakeet")
     elif role == "tts":
         prepare_espeak()
         from mlx_audio.tts.utils import load_model
-        LOADED = load_model(path, model_type="kokoro")
+        model = load_model(path, model_type="kokoro")
     elif role in ("reasoning", "vision"):
         from mlx_vlm import load as load_vlm
-        LOADED = load_vlm(path, trust_remote_code=False)
+        model = load_vlm(path, trust_remote_code=False)
     elif role == "embedding":
         from mlx_embeddings.utils import load as load_embeddings
-        LOADED = load_embeddings(path)
+        model = load_embeddings(path)
     else:
         raise ValueError("This capability requires device qualification before activation.")
-    LOADED_KEY = key
-    return LOADED
+    RESIDENT[key] = model
+    RESIDENT_BYTES[key] = max(mx.get_active_memory() - before, size)
+    return model
 
 # espeak-ng keeps its data directory in a fixed 160-byte buffer. Given a longer path it silently
 # falls back to the one compiled into the wheel — a build machine's directory that exists nowhere —
@@ -172,7 +190,33 @@ def embed(texts):
     model, tokenizer = load("embedding", "embedding")
     return generate(model, tokenizer, texts=texts[:16]).text_embeds.tolist()
 
-def chat(messages, max_tokens, image=None, delta=None, cancelled=None):
+# A reply meant for the ear, not the eye. The service worker strips the same marks for the replies
+# it speaks in one piece; this is the streaming path, where the text never leaves the worker first.
+SPEECH_MARKS = [
+    (re.compile(r"```[\s\S]*?```"), " "),
+    (re.compile(r"`([^`]+)`"), r"\1"),
+    (re.compile(r"!?\[([^\]]*)\]\([^)]*\)"), r"\1"),
+    (re.compile(r"(?m)^\s{0,3}#{1,6}\s+"), ""),
+    (re.compile(r"(?m)^\s{0,3}>\s?"), ""),
+    (re.compile(r"(?m)^\s{0,3}([-*+]|\d+\.)\s+"), ""),
+    (re.compile(r"(\*\*|__)(.*?)\1"), r"\2"),
+    (re.compile(r"~~(.*?)~~"), r"\1"),
+]
+# A decimal point, or a quote closing after one, is not the end of a thought.
+SENTENCE = re.compile(r"[^.!?]*(?:\.(?!\d)|[!?])[\"')\]]*(?=\s|$)")
+
+def for_speech(text):
+    for pattern, replacement in SPEECH_MARKS:
+        text = pattern.sub(replacement, text)
+    return re.sub(r"\s+", " ", text).strip()
+
+def take_sentence(text):
+    match = SENTENCE.search(text)
+    if not match:
+        return None, text
+    return text[:match.end()].strip(), text[match.end():]
+
+def chat(messages, max_tokens, image=None, delta=None, cancelled=None, speak=None, audio=None):
     from mlx_vlm import stream_generate
     from mlx_vlm.prompt_utils import apply_chat_template
     from mlx_vlm.utils import load_config
@@ -182,12 +226,33 @@ def chat(messages, max_tokens, image=None, delta=None, cancelled=None):
             raise ValueError("Only the selected temporary observation may be used.")
     prompt = apply_chat_template(processor, load_config(model_path("qwen")), messages[-20:], num_images=1 if image else 0, enable_thinking=False)
     text = ""
+    pending = ""
+
+    def say(piece):
+        # Synthesis happens here, between tokens, because the worker runs one job at a time: a
+        # separate request for speech would wait behind the generation it is meant to keep up with.
+        words = for_speech(piece)
+        if not words:
+            return
+        samples, rate = synthesize(words, speak.get("voice", "bm_george"), speak.get("speed", 1), cancelled)
+        audio(str(write_audio(samples, rate)), len(samples) / rate)
+
     for chunk in stream_generate(model, processor, prompt, image=[image] if image else None, max_tokens=min(max_tokens, 2000), temperature=0.4):
         if cancelled and cancelled():
             raise ValueError("Cancelled.")
         text += chunk.text
         if delta:
             delta(chunk.text)
+        if speak and audio:
+            pending += chunk.text
+            while True:
+                sentence, rest = take_sentence(pending)
+                if not sentence:
+                    break
+                pending = rest
+                say(sentence)
+    if speak and audio and pending.strip():
+        say(pending)
     return text.strip()
 
 def fixture_font(size):
@@ -474,14 +539,28 @@ def execute(request):
             model_id = p["id"]
             if not any(item["id"] == model_id for item in CATALOG):
                 raise ValueError("Unknown model.")
-            global LOADED, LOADED_KEY
-            if LOADED_KEY and LOADED_KEY[0] == model_id:
-                LOADED = None; LOADED_KEY = None; gc.collect()
+            for key in [k for k in RESIDENT if k[0] == model_id]:
+                release(key)
             shutil.rmtree(MODELS / model_id, ignore_errors=True)
             result = True
+        elif method == "models.warm":
+            # The first exchange is the one that feels slowest, so the models a spoken turn needs
+            # are loaded before anybody asks for them. Smallest first: they all have to fit at once.
+            warmed = []
+            for role in ("asr", "embedding", "reasoning", "tts"):
+                ready = [item["id"] for item in CATALOG
+                         if item["role"] == role and (manifest(item["id"]) or {}).get("qualified")]
+                if not ready:
+                    continue
+                try:
+                    load(min(ready, key=weights_bytes), role)
+                    warmed.append(role)
+                except Exception:
+                    continue
+            result = {"warmed": warmed}
         elif method == "asr":
             path = bounded_audio(p["path"])
-            result = {"text": transcribe(p.get("model", "parakeet"), path)}
+            result = {"text": transcribe(p.get("model", "whisper"), path)}
         elif method == "endpoint":
             from endpoint import predict
             result = predict(bounded_audio(p["path"]), model_path("silero"), model_path("smart-turn"))
@@ -490,7 +569,12 @@ def execute(request):
             path = write_audio(samples, rate)
             result = {"path": str(path), "duration": len(samples) / rate, "sampleRate": rate}
         elif method == "chat":
-            text = chat(p["messages"], p.get("maxTokens", 700), p.get("image"), lambda piece: event("chat.delta", {"requestId": request_id, "conversationId": p.get("conversationId"), "text": piece}), cancelled)
+            text = chat(
+                p["messages"], p.get("maxTokens", 700), p.get("image"),
+                lambda piece: event("chat.delta", {"requestId": request_id, "conversationId": p.get("conversationId"), "text": piece}),
+                cancelled, p.get("speak"),
+                lambda path, duration: event("chat.audio", {"requestId": request_id, "conversationId": p.get("conversationId"), "path": path, "duration": duration}),
+            )
             result = {"text": text}
         elif method == "embed":
             result = {"vectors": embed(p["texts"]), "revision": manifest("embedding")["revision"]}

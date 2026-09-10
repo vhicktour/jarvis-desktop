@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
+import { spoken, firstSentence } from '../src/shared/speech'
 import { Store } from '../src/core/store'
 import { TaskEngine, type TaskExecutor, type TaskRun } from '../src/core/tasks'
 import { hash, now, uid } from '../src/core/util'
@@ -1030,6 +1031,31 @@ test('a runtime that answers and then leaves quietly is reported, not treated as
   assert.match(models.failure!, /stopped on its own \(exit 0\)/)
   assert.equal(models.process, undefined)
   rmSync(dir, { recursive: true, force: true })
+})
+
+test('what is spoken is the words, not the marks that were meant for the eye', () => {
+  assert.equal(spoken('The capital is **Paris**.'), 'The capital is Paris.')
+  assert.equal(spoken('## Heading\n- one\n- two'), 'Heading\none\ntwo')
+  assert.equal(spoken('See [the note](https://example.com/x) for more.'), 'See the note for more.')
+  assert.equal(spoken('Run `pnpm test` now.'), 'Run pnpm test now.')
+  assert.equal(spoken('Before\n```js\nconst a = 1\n```\nAfter'), 'Before\n(code)\nAfter')
+  assert.equal(spoken('_emphasis_ and ~~struck~~'), 'emphasis and struck')
+  // A word with underscores inside it is a name, not emphasis.
+  assert.equal(spoken('The file is af_heart today.'), 'The file is af_heart today.')
+})
+
+test('a sentence is only handed to the voice once it has actually finished', () => {
+  assert.equal(
+    firstSentence('The capital of France'),
+    undefined,
+    'an unfinished thought was spoken',
+  )
+  assert.deepEqual(firstSentence('It is Paris. And then'), ['It is Paris.', ' And then'])
+  assert.deepEqual(firstSentence('Really? Yes'), ['Really?', ' Yes'])
+  // 3.85 is a number, not two sentences.
+  assert.equal(firstSentence('It took 3.85 seconds'), undefined, 'a decimal point ended a sentence')
+  assert.deepEqual(firstSentence('It took 3.85 seconds. Next'), ['It took 3.85 seconds.', ' Next'])
+  assert.deepEqual(firstSentence('He said "go." Then left'), ['He said "go."', ' Then left'])
 })
 
 test('a long profile path does not send speech to a directory that is not there', (t) => {

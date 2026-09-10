@@ -108,6 +108,9 @@ final class AudioHistory {
     var recording: AVAudioFile?
     var recordPath: URL?
     var player: AVAudioPlayer?
+    // Sentences of one reply, waiting their turn. A reply spoken in pieces is still one utterance,
+    // so it keeps one generation and reports finishing once, when the last piece has played.
+    var playbackQueue: [URL] = []
     var playbackMeter: Timer?
     var audioHistory: AudioHistory?
     var generation = 0
@@ -191,7 +194,7 @@ final class AudioHistory {
         case "audio.discard":
             if audio.isRunning { audio.stop(); audio.inputNode.removeTap(onBus: 0) }; recording = nil; audioHistory = nil
             if let path = recordPath { try? FileManager.default.removeItem(at: path) }; recordPath = nil; return true
-        case "speech.stop": generation = p["generation"] as? Int ?? generation + 1; playbackMeter?.invalidate(); playbackMeter = nil; player?.stop(); player = nil; playbackGenerations.removeAll(); speech.stopSpeaking(at: .immediate); return ["playing": false, "generation": generation]
+        case "speech.stop": generation = p["generation"] as? Int ?? generation + 1; playbackMeter?.invalidate(); playbackMeter = nil; player?.stop(); player = nil; playbackQueue.removeAll(); playbackGenerations.removeAll(); speech.stopSpeaking(at: .immediate); return ["playing": false, "generation": generation]
         case "speech.status": return ["playing": player?.isPlaying ?? false, "speaking": speech.isSpeaking, "generation": generation, "outputRoute": outputRoute()]
         case "speech.system":
             let text = p["text"] as? String ?? ""; guard text.count <= 12_000 else { throw fail("Speech is too long.") }
@@ -202,24 +205,22 @@ final class AudioHistory {
             speechGenerations[ObjectIdentifier(utterance)] = generation
             speech.speak(utterance); return true
         case "speech.play":
-            let url = URL(fileURLWithPath: p["path"] as? String ?? "").standardizedFileURL
-            guard url.path.hasPrefix(ephemeral.path + "/") else { throw fail("Playback is restricted to temporary audio.") }
-            playbackMeter?.invalidate(); player?.stop(); playbackGenerations.removeAll(); speech.stopSpeaking(at: .immediate); generation = p["generation"] as? Int ?? generation + 1
-            player = try AVAudioPlayer(contentsOf: url); player?.delegate = self
-            if let value = player { playbackGenerations[ObjectIdentifier(value)] = generation }
-            player?.isMeteringEnabled = true
-            player?.prepareToPlay()
-            guard player?.play() == true else { player = nil; throw fail("The audio output route is unavailable.") }
-            let session = generation
-            playbackMeter = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    guard let self = self, let player = self.player, player.isPlaying, session == self.generation else { return }
-                    player.updateMeters()
-                    let amplitude = min(1, pow(10, Double(player.averagePower(forChannel: 0)) / 20) * 3.2)
-                    event("speech.level", ["generation": session, "level": amplitude])
-                }
-            }
+            let url = try playableURL(p["path"] as? String ?? "")
+            playbackMeter?.invalidate(); player?.stop(); playbackQueue.removeAll(); playbackGenerations.removeAll(); speech.stopSpeaking(at: .immediate); generation = p["generation"] as? Int ?? generation + 1
+            try startPlayback(url, session: generation)
             return true
+        case "speech.enqueue":
+            // A reply spoken sentence by sentence: the pieces follow one another without a gap,
+            // and the whole reply reports finishing once, when the last of them has played.
+            let url = try playableURL(p["path"] as? String ?? "")
+            let session = p["generation"] as? Int ?? generation
+            guard session == generation else { return ["queued": false, "generation": generation] }
+            if player?.isPlaying == true {
+                playbackQueue.append(url)
+            } else {
+                try startPlayback(url, session: session)
+            }
+            return ["queued": true, "generation": generation]
         case "file.create":
             guard let root = p["root"] as? String, let relative = p["relativePath"] as? String, let text = p["content"] as? String, text.utf8.count <= 100_000 else { throw fail("Invalid bounded file proposal.") }
             let parts = relative.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
@@ -350,7 +351,37 @@ final class AudioHistory {
         default: throw fail("Unsupported native request: \(method)")
         }
     }
-    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) { if let session = playbackGenerations.removeValue(forKey: ObjectIdentifier(player)) { if self.player === player { playbackMeter?.invalidate(); playbackMeter = nil }; event("speech.finished", ["generation": session, "success": flag]) } }
+    func playableURL(_ path: String) throws -> URL {
+        let url = URL(fileURLWithPath: path).standardizedFileURL
+        guard url.path.hasPrefix(ephemeral.path + "/") else { throw fail("Playback is restricted to temporary audio.") }
+        return url
+    }
+    func startPlayback(_ url: URL, session: Int) throws {
+        playbackMeter?.invalidate()
+        player = try AVAudioPlayer(contentsOf: url); player?.delegate = self
+        if let value = player { playbackGenerations[ObjectIdentifier(value)] = session }
+        player?.isMeteringEnabled = true
+        player?.prepareToPlay()
+        guard player?.play() == true else { player = nil; throw fail("The audio output route is unavailable.") }
+        playbackMeter = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self = self, let player = self.player, player.isPlaying, session == self.generation else { return }
+                player.updateMeters()
+                let amplitude = min(1, pow(10, Double(player.averagePower(forChannel: 0)) / 20) * 3.2)
+                event("speech.level", ["generation": session, "level": amplitude])
+            }
+        }
+    }
+    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        guard let session = playbackGenerations.removeValue(forKey: ObjectIdentifier(player)) else { return }
+        // The next sentence of the same reply follows straight on; only the last one reports done.
+        if self.player === player, session == generation, flag, !playbackQueue.isEmpty {
+            let next = playbackQueue.removeFirst()
+            if (try? startPlayback(next, session: session)) != nil { return }
+        }
+        if self.player === player { playbackMeter?.invalidate(); playbackMeter = nil; playbackQueue.removeAll() }
+        event("speech.finished", ["generation": session, "success": flag])
+    }
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) { if let session = speechGenerations.removeValue(forKey: ObjectIdentifier(utterance)) { event("speech.finished", ["generation": session, "success": true]) } }
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) { speechGenerations.removeValue(forKey: ObjectIdentifier(utterance)) }
 }

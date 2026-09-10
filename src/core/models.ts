@@ -127,6 +127,15 @@ export class Models {
   private explain(reason: string) {
     return [reason, ...this.diagnostics].join(' · ').slice(0, 600)
   }
+  /** Load what a spoken turn needs before it is needed; the first exchange is the slow one. */
+  async warm() {
+    if (!this.process) return
+    const began = Date.now()
+    const result = await this.process.request('models.warm', {}, 600_000)
+    this.log(
+      `Warmed ${result?.warmed?.length ?? 0} roles in ${((Date.now() - began) / 1000).toFixed(1)} s.`,
+    )
+  }
   async refresh() {
     if (!this.process) return
     const manifests = await this.process.request('models.status')
