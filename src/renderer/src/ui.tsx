@@ -92,14 +92,21 @@ export function Toggle({
   description,
   selected,
   onChange,
+  isDisabled = false,
 }: {
   label: string
   description?: string
   selected: boolean
   onChange: (selected: boolean) => void
+  isDisabled?: boolean
 }) {
   return (
-    <Switch className="toggle-row" isSelected={selected} onChange={onChange}>
+    <Switch
+      className="toggle-row"
+      isSelected={selected}
+      onChange={onChange}
+      isDisabled={isDisabled}
+    >
       <span>
         <span className="row-title">{label}</span>
         {description && <span className="row-description">{description}</span>}

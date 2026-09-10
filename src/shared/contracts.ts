@@ -223,6 +223,8 @@ export type VoiceStatus = {
   partial: string
   error?: string
   generation: number
+  /** Whether a hands-free session is running, so the microphone opens again after each reply. */
+  handsFree: boolean
 }
 export type Message = {
   id: string

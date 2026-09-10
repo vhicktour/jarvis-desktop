@@ -27,7 +27,9 @@ export function useActivity() {
     }
   if (voice === 'listening')
     return {
-      label: 'Listening. Click to finish.',
+      label: snapshot.voice.handsFree
+        ? 'Listening, hands-free. Click to finish.'
+        : 'Listening. Click to finish.',
       mode: 'listening' as OrbState,
       tone: 'active',
       active: true,

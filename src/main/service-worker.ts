@@ -31,6 +31,15 @@ import {
   type WindowChoice,
 } from '../shared/contracts'
 import { emptySnapshot } from '../shared/defaults'
+import {
+  HANDS_FREE_SETTLE_MS,
+  SPEECH_LEVEL,
+  endpointingReady,
+  handsFreeReady,
+  shouldReopenMicrophone,
+  turnAction,
+  withVoiceDependencies,
+} from '../shared/turn'
 import { hash, invariant, now, safeError, uid } from '../core/util'
 
 const parent = process.parentPort!
@@ -74,6 +83,9 @@ let lastLevelUpdate = 0
 let lastSpeechAt = 0
 let lastEndpointAt = 0
 let endpointBusy = false
+/** The playback whose ending reopens the microphone, so other speech never does. */
+let resumeGeneration: number | undefined
+let resumeTimer: NodeJS.Timeout | undefined
 let lastSnapshot = 0
 let scheduledSnapshot: NodeJS.Timeout | undefined
 let lastReceiptId: string | undefined
@@ -282,8 +294,65 @@ function modelEvent(message: any) {
       `${models.records.find((m) => m.id === message.params.id)?.name ?? 'Model'}: ${message.params.stage}`,
     )
 }
+/** A hands-free session reopens the microphone after each reply, until something ends it. */
+function endHandsFree(reason?: string) {
+  if (resumeTimer) clearTimeout(resumeTimer)
+  resumeTimer = undefined
+  resumeGeneration = undefined
+  if (!state.voice.handsFree) return
+  state.voice.handsFree = false
+  if (reason) notice(reason)
+  publish(false)
+}
+/** Half duplex: the microphone opens again only once the reply has finished playing. */
+function resumeListening() {
+  if (resumeTimer) clearTimeout(resumeTimer)
+  resumeTimer = undefined
+  resumeGeneration = undefined
+  if (!state.voice.handsFree) return
+  if (
+    !shouldReopenMicrophone({
+      handsFree: state.voice.handsFree,
+      phase: state.voice.phase,
+      locked: state.diagnostics.locked,
+      closing,
+      automaticEndpointing: state.settings.automaticEndpointing,
+      qualified: (id) => models.qualified(id),
+    })
+  ) {
+    // Losing the models is worth saying; the person switching endpointing off is not.
+    endHandsFree(
+      endpointingReady((id) => models.qualified(id))
+        ? undefined
+        : 'Hands-free listening stopped: Silero and Smart Turn are no longer qualified on this Mac.',
+    )
+    return
+  }
+  resumeTimer = setTimeout(() => {
+    resumeTimer = undefined
+    if (state.voice.handsFree && state.voice.phase === 'off') background(toggleVoice())
+  }, HANDS_FREE_SETTLE_MS)
+  resumeTimer.unref()
+}
+/** Nobody spoke into a microphone that opened itself, so there is nothing to transcribe. */
+async function abandonTurn() {
+  if (voiceBusy || state.voice.phase !== 'listening') return
+  voiceBusy = true
+  try {
+    state.voice.generation++
+    state.voice.phase = 'off'
+    state.voice.level = 0
+    await native('audio.discard')
+    endHandsFree('Hands-free listening ended. I didn’t hear anything.')
+    publish(false)
+  } finally {
+    voiceBusy = false
+  }
+}
 async function stopSpeech() {
   state.voice.generation++
+  // Whatever was going to reopen the microphone is no longer the playback that ends.
+  resumeGeneration = undefined
   speech?.abort()
   speech = undefined
   if (state.voice.phase === 'speaking') state.voice.phase = 'off'
@@ -291,9 +360,10 @@ async function stopSpeech() {
   publish(false)
   await native('speech.stop', { generation: state.voice.generation })
 }
-async function speak(text: string) {
+async function speak(text: string, resume = false) {
   await stopSpeech()
   const generation = state.voice.generation
+  if (resume) resumeGeneration = generation
   speech = new AbortController()
   const current = speech
   state.voice.phase = 'speaking'
@@ -332,17 +402,22 @@ async function speak(text: string) {
       state.voice.phase = 'error'
       state.voice.error = safeError(error)
       notice(safeError(error), 'error')
+      // A reply that never reached the speaker cannot be the cue to listen again.
+      endHandsFree()
       publish(false)
     }
   }
 }
 async function toggleVoice() {
+  // Interrupting a reply or a thought is how a person leaves a hands-free session.
   if (state.voice.phase === 'speaking') {
+    endHandsFree()
     await stopSpeech()
     return true
   }
   if (voiceBusy) return true
   if (state.voice.phase === 'thinking' || state.voice.phase === 'transcribing') {
+    endHandsFree()
     conversation?.abort()
     state.voice.generation++
     state.voice.phase = 'off'
@@ -373,6 +448,8 @@ async function toggleVoice() {
             if (result.text.trim()) await converse(result.text)
             else {
               state.voice.phase = 'off'
+              // Finishing a turn with nothing in it is also how a person ends the session.
+              endHandsFree()
               notice('I didn’t catch any speech. Try again when you’re ready.')
             }
           } catch (error) {
@@ -405,6 +482,10 @@ async function toggleVoice() {
       level: 0,
       partial: '',
       generation: state.voice.generation + 1,
+      // A session runs from the moment a qualified hands-free microphone first opens.
+      handsFree:
+        state.voice.handsFree ||
+        (state.settings.handsFree && handsFreeReady(state.settings, (id) => models.qualified(id))),
     }
     await native('audio.start', { generation: state.voice.generation })
     lastSpeechAt = 0
@@ -414,6 +495,8 @@ async function toggleVoice() {
   } catch (error) {
     state.voice.phase = 'error'
     state.voice.error = safeError(error)
+    // A microphone that would not open again leaves nothing for the session to continue with.
+    endHandsFree()
     publish()
     throw error
   } finally {
@@ -421,7 +504,8 @@ async function toggleVoice() {
   }
 }
 async function checkEndpoint(generation: number, speechAt: number) {
-  if (endpointBusy || !models.has('silero') || !models.has('smart-turn')) return
+  // Installed is not enough: only a model that passed its checks here may end a turn.
+  if (endpointBusy || !endpointingReady((id) => models.qualified(id))) return
   endpointBusy = true
   let path: string | undefined
   try {
@@ -468,6 +552,8 @@ async function converse(text: string) {
     )
     state.selectedTaskId = task.id
     state.voice.phase = 'off'
+    // Work has its own evidence and approvals to attend to; the microphone stays shut.
+    endHandsFree()
     publish()
     return true
   }
@@ -495,8 +581,11 @@ async function converse(text: string) {
     }
     state.messages.push(reply)
     if (state.settings.transcriptDays > 0) store.saveMessage(reply)
+    // Without this the orb stays on “understanding your words” when replies are not spoken.
+    state.voice.phase = 'off'
     publish()
-    if (state.settings.speakReplies) background(speak(reply.text))
+    if (state.settings.speakReplies) background(speak(reply.text, state.voice.handsFree))
+    else if (state.voice.handsFree) resumeListening()
     return true
   }
   proposal?.abort()
@@ -562,11 +651,15 @@ async function converse(text: string) {
     assistant.sources = cited()
     if (state.settings.transcriptDays > 0) store.saveMessage(assistant)
     state.voice.phase = 'off'
-    if (state.settings.speakReplies) background(speak(assistant.text))
+    // Hands-free listens again when the reply has been spoken, or at once when it is not.
+    if (state.settings.speakReplies) background(speak(assistant.text, state.voice.handsFree))
+    else if (state.voice.handsFree) resumeListening()
     // A suggestion that fails or is interrupted is not worth interrupting the person for.
     void proposeMemory(user).catch(() => {})
   } catch (error) {
     assistant.streaming = false
+    // An interrupted or failed answer is the end of the session either way.
+    endHandsFree()
     if (controller.signal.aborted) assistant.text ||= 'Interrupted.'
     else {
       assistant.text = safeError(error)
@@ -750,6 +843,7 @@ async function command(value: any): Promise<unknown> {
   if (value.type === 'system.suspend') {
     state.diagnostics.locked = true
     tasks.suspend(true)
+    endHandsFree()
     conversation?.abort()
     await stopSpeech()
     await native('audio.discard')
@@ -771,16 +865,17 @@ async function command(value: any): Promise<unknown> {
       publish()
       return state
     case 'settings.update': {
-      const settings = Settings.parse({ ...store.settings(), ...c.patch })
-      invariant(
-        !settings.handsFree,
-        'Hands-free mode remains disabled until endpointing and audio-route interruption tests pass on this Mac.',
-      )
+      // Hands-free cannot outlive the endpointing that closes the microphone for it.
+      const settings = withVoiceDependencies(Settings.parse({ ...store.settings(), ...c.patch }))
       // Turning a capability on requires its checks to have passed here, not merely to be installed.
+      // The patch is validated rather than the merge, so a shut gate cannot block unrelated writes.
       invariant(
-        !c.patch.automaticEndpointing ||
-          (models.qualified('silero') && models.qualified('smart-turn')),
+        !c.patch.automaticEndpointing || endpointingReady((id) => models.qualified(id)),
         'Silero and Smart Turn need to pass their checks in Settings → Local models before Jarvis can finish a turn for you.',
+      )
+      invariant(
+        !c.patch.handsFree || handsFreeReady(settings, (id) => models.qualified(id)),
+        'Switch on “Finish a turn naturally” first. Without it nothing closes the microphone, so Jarvis would never hear the end of a thought.',
       )
       if (settings.privacyMode === 'local-only')
         invariant(
@@ -794,12 +889,14 @@ async function command(value: any): Promise<unknown> {
           'Pause cloud tasks before enabling local-only mode.',
         )
       store.setSetting('preferences', settings)
+      if (!settings.handsFree) endHandsFree()
       publish()
       return settings
     }
     case 'voice.toggle':
       return toggleVoice()
     case 'voice.stopSpeech':
+      endHandsFree()
       await stopSpeech()
       return true
     case 'voice.audition':
@@ -1099,6 +1196,7 @@ parent.on('message', async ({ data: message }: { data: any }) => {
       if (entry.timer) clearTimeout(entry.timer)
     }
     if (following) clearInterval(following)
+    if (resumeTimer) clearTimeout(resumeTimer)
     conversation?.abort()
     speech?.abort()
     vault?.stop()
@@ -1125,28 +1223,35 @@ parent.on('message', async ({ data: message }: { data: any }) => {
     if (
       method === 'audio.level' &&
       params.generation === state.voice.generation &&
-      state.voice.phase === 'listening' &&
-      Date.now() - lastLevelUpdate > 65
+      state.voice.phase === 'listening'
     ) {
-      state.voice.level = Math.max(0, Math.min(1, params.level))
-      lastLevelUpdate = Date.now()
-      if (params.level > 0.035) lastSpeechAt = params.elapsed
-      if (
-        state.settings.automaticEndpointing &&
-        lastSpeechAt > 0 &&
-        params.elapsed - lastSpeechAt > 1.2 &&
-        params.elapsed - lastEndpointAt > 1.2
-      ) {
+      const level = Math.max(0, Math.min(1, params.level))
+      // Every buffer decides whether somebody spoke; only the meter is paced for the interface.
+      if (level > SPEECH_LEVEL) lastSpeechAt = params.elapsed
+      if (Date.now() - lastLevelUpdate > 65) {
+        state.voice.level = level
+        lastLevelUpdate = Date.now()
+        publish(false)
+      }
+      const action = turnAction({
+        elapsed: params.elapsed,
+        lastSpeechAt,
+        lastEndpointAt,
+        endpointing: state.settings.automaticEndpointing,
+        handsFree: state.voice.handsFree,
+      })
+      if (action === 'examine') {
         lastEndpointAt = params.elapsed
         background(checkEndpoint(state.voice.generation, lastSpeechAt))
-      }
-      publish(false)
-      if (params.elapsed >= 120) background(toggleVoice())
+      } else if (action === 'finish') background(toggleVoice())
+      else if (action === 'abandon') background(abandonTurn())
     }
     if (method === 'speech.finished' && params.generation === state.voice.generation) {
+      const reopen = resumeGeneration === params.generation
       state.voice.phase = 'off'
       state.voice.level = 0
       publish(false)
+      if (reopen) resumeListening()
     }
     if (method === 'audio.error') notice(params.message, 'error')
     return

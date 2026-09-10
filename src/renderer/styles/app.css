@@ -1123,6 +1123,9 @@ textarea::placeholder {
 .toggle-row {
   cursor: pointer;
 }
+.toggle-row[data-disabled] {
+  cursor: default;
+}
 .switch-track {
   display: flex;
   align-items: center;
