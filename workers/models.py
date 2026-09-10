@@ -83,6 +83,7 @@ def load(model_id, role):
             from mlx_audio.stt.utils import load_model
             LOADED = load_model(path, model_type="parakeet")
     elif role == "tts":
+        prepare_espeak()
         from mlx_audio.tts.utils import load_model
         LOADED = load_model(path, model_type="kokoro")
     elif role in ("reasoning", "vision"):
@@ -95,6 +96,35 @@ def load(model_id, role):
         raise ValueError("This capability requires device qualification before activation.")
     LOADED_KEY = key
     return LOADED
+
+# espeak-ng keeps its data directory in a fixed 160-byte buffer. Given a longer path it silently
+# falls back to the one compiled into the wheel — a build machine's directory that exists nowhere —
+# and then calls exit() when the phoneme tables are not there, taking the whole worker with it and
+# leaving no traceback to explain itself. Inside an installed application the bundled directory is
+# 167 bytes, so it is reached through a short link that lives beside the models.
+ESPEAK_PATH_LIMIT = 160
+
+def espeak_data_path():
+    import espeakng_loader
+    data = Path(espeakng_loader.get_data_path())
+    if len(str(data).encode()) < ESPEAK_PATH_LIMIT:
+        return str(data)
+    link = ROOT / "espeak-ng-data"
+    if not (link.is_symlink() and link.resolve() == data.resolve()):
+        if link.is_symlink() or link.exists():
+            link.unlink()
+        link.symlink_to(data, target_is_directory=True)
+    if len(str(link).encode()) >= ESPEAK_PATH_LIMIT:
+        raise ValueError("The path to this profile is too long for speech synthesis to start.")
+    return str(link)
+
+def prepare_espeak():
+    import espeakng_loader
+    from phonemizer.backend.espeak.wrapper import EspeakWrapper
+    # misaki sets these on import and would otherwise overwrite the short path with the long one.
+    import misaki.espeak  # noqa: F401
+    EspeakWrapper.set_library(espeakng_loader.get_library_path())
+    EspeakWrapper.set_data_path(espeak_data_path())
 
 def bounded_audio(path):
     path = Path(path).resolve()

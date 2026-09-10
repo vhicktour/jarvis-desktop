@@ -13,6 +13,7 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
+import { spawnSync } from 'node:child_process'
 import { Store } from '../src/core/store'
 import { TaskEngine, type TaskExecutor, type TaskRun } from '../src/core/tasks'
 import { hash, now, uid } from '../src/core/util'
@@ -1029,6 +1030,53 @@ test('a runtime that answers and then leaves quietly is reported, not treated as
   assert.match(models.failure!, /stopped on its own \(exit 0\)/)
   assert.equal(models.process, undefined)
   rmSync(dir, { recursive: true, force: true })
+})
+
+test('a long profile path does not send speech to a directory that is not there', (t) => {
+  // espeak-ng holds its data directory in a 160-byte buffer. Handed a longer path it silently uses
+  // the one compiled into the wheel and then exits the process, so the rule is worth pinning: the
+  // bundled directory is used when it fits, and reached through a short link when it does not.
+  const python = spawnSync('python3', ['-c', 'pass'])
+  if (python.error) return t.skip('python3 is not on PATH')
+  const source = readFileSync('workers/models.py', 'utf8')
+  const rule = source.slice(source.indexOf('ESPEAK_PATH_LIMIT ='), source.indexOf('def prepare_espeak('))
+  assert.ok(rule.includes('def espeak_data_path'), 'the espeak path rule was not found to test')
+  const dir = mkdtempSync(join(tmpdir(), 'jarvis-espeak-'))
+  const short = join(dir, 'espeak-ng-data')
+  const deep = join(dir, 'd'.repeat(120), 'espeakng_loader', 'espeak-ng-data')
+  mkdirSync(short)
+  mkdirSync(deep, { recursive: true })
+  assert.ok(short.length < 160 && deep.length >= 160, 'the fixture paths do not straddle the limit')
+  const run = (data: string, root: string) =>
+    spawnSync(
+      'python3',
+      [
+        '-c',
+        [
+          'import sys, types',
+          'from pathlib import Path',
+          `ROOT = Path(${JSON.stringify(root)})`,
+          'loader = types.ModuleType("espeakng_loader")',
+          `loader.get_data_path = lambda: ${JSON.stringify(data)}`,
+          'sys.modules["espeakng_loader"] = loader',
+          rule,
+          'print(espeak_data_path())',
+        ].join('\n'),
+      ],
+      { encoding: 'utf8' },
+    )
+  const fits = run(short, dir)
+  assert.equal(fits.status, 0, fits.stderr)
+  assert.equal(fits.stdout.trim(), short, 'a directory that fits was not used as it stands')
+  const roomFor = mkdtempSync(join(tmpdir(), 'jarvis-root-'))
+  const long = run(deep, roomFor)
+  assert.equal(long.status, 0, long.stderr)
+  const chosen = long.stdout.trim()
+  assert.notEqual(chosen, deep, 'a directory too long for espeak was handed over unchanged')
+  assert.ok(chosen.length < 160, `the link is itself too long: ${chosen.length} bytes`)
+  assert.equal(realpathSync(chosen), realpathSync(deep), 'the link does not reach the real data')
+  rmSync(dir, { recursive: true, force: true })
+  rmSync(roomFor, { recursive: true, force: true })
 })
 
 test('a runtime that is slow to answer is asked again, not killed for being slow', async () => {
