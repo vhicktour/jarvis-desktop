@@ -1039,7 +1039,10 @@ test('a long profile path does not send speech to a directory that is not there'
   const python = spawnSync('python3', ['-c', 'pass'])
   if (python.error) return t.skip('python3 is not on PATH')
   const source = readFileSync('workers/models.py', 'utf8')
-  const rule = source.slice(source.indexOf('ESPEAK_PATH_LIMIT ='), source.indexOf('def prepare_espeak('))
+  const rule = source.slice(
+    source.indexOf('ESPEAK_PATH_LIMIT ='),
+    source.indexOf('def prepare_espeak('),
+  )
   assert.ok(rule.includes('def espeak_data_path'), 'the espeak path rule was not found to test')
   const dir = mkdtempSync(join(tmpdir(), 'jarvis-espeak-'))
   const short = join(dir, 'espeak-ng-data')
