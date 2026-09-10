@@ -68,9 +68,9 @@ export class JsonProcess extends EventEmitter {
       this.emit('diagnostic', safeError(chunk.toString('utf8'))),
     )
     this.child.on('error', (error) => this.fail(error))
-    this.child.on('exit', (code) => {
-      this.fail(new Error(`Worker exited (${code ?? 'signal'}).`))
-      this.emit('exit', code)
+    this.child.on('exit', (code, signal) => {
+      this.fail(new Error(`Worker exited (${code ?? signal ?? 'signal'}).`))
+      this.emit('exit', code, signal)
     })
   }
   request<T = any>(

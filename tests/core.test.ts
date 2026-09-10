@@ -1019,3 +1019,43 @@ test('a runtime that answers and then leaves quietly is reported, not treated as
   assert.equal(models.process, undefined)
   rmSync(dir, { recursive: true, force: true })
 })
+
+test('a runtime killed outright is named by its signal, not by an exit code it never had', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'jarvis-killed-'))
+  const workers = join(dir, 'workers')
+  mkdirSync(workers)
+  writeFileSync(
+    join(workers, 'runtime.json'),
+    JSON.stringify({ version: 1, python: 'interpreter' }),
+  )
+  // Answers the handshake, then waits to be killed the way the kernel kills a bad signature.
+  writeFileSync(
+    join(workers, 'interpreter'),
+    [
+      '#!/bin/sh',
+      'reply() {',
+      '  read -r line || exit 0',
+      '  id=$(printf "%s" "$line" | sed -n \'s/.*"id":"\\([^"]*\\)".*/\\1/p\')',
+      '  printf \'{"version":1,"id":"%s","result":{"version":1,"roles":[]}}\\n\' "$id"',
+      '}',
+      'reply',
+      'reply',
+      'while true; do sleep 1; done',
+    ].join('\n') + '\n',
+    { mode: 0o755 },
+  )
+  writeFileSync(join(workers, 'models.py'), '')
+  const models = new Models(
+    dir,
+    workers,
+    () => {},
+    () => {},
+  )
+  assert.equal(await models.start(), true)
+  assert.equal(models.failure, undefined)
+  process.kill(models.process!.child.pid!, 'SIGKILL')
+  await until(() => models.failure !== undefined, 'a killed runtime went unreported')
+  assert.match(models.failure!, /stopped on its own \(SIGKILL\)/)
+  assert.equal(models.process, undefined)
+  rmSync(dir, { recursive: true, force: true })
+})
