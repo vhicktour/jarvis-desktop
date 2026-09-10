@@ -54,10 +54,15 @@ export class Models {
       const text = String(line).trim()
       if (text) this.diagnostics = [...this.diagnostics, text].slice(-8)
     })
-    worker.on('exit', () => {
+    // A worker that answers and then leaves quietly is the failure to catch: exit 0 is not fine
+    // when nobody asked it to stop, and it arrives with no stderr to explain itself.
+    worker.on('exit', (code: number | null) => {
       if (this.process !== worker) return
       this.process = undefined
-      if (!this.stopping) this.failure = this.explain('The local model runtime stopped.')
+      if (!this.stopping)
+        this.failure = this.explain(
+          `The local model runtime stopped on its own (exit ${code ?? 'signal'}). Open Settings → Local models to start it again.`,
+        )
       this.changed()
     })
     try {

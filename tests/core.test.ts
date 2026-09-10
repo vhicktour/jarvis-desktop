@@ -953,3 +953,69 @@ test('a seen point is mapped onto a real control, and one that lands on nothing 
   )
   assert.equal(deletes, 3, 'a capture was left behind')
 })
+
+test('a model runtime that will not start says why, in words the interface can show', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'jarvis-runtime-'))
+  const workers = join(dir, 'workers')
+  mkdirSync(workers)
+  writeFileSync(
+    join(workers, 'runtime.json'),
+    JSON.stringify({ version: 1, python: 'interpreter' }),
+  )
+  // A runtime that fails the way a missing dependency would: a word on stderr, then gone.
+  writeFileSync(
+    join(workers, 'interpreter'),
+    '#!/bin/sh\nsleep 0.5\necho "ModuleNotFoundError: No module named mlx" >&2\nexit 1\n',
+    { mode: 0o755 },
+  )
+  writeFileSync(join(workers, 'models.py'), '')
+  const models = new Models(
+    dir,
+    workers,
+    () => {},
+    () => {},
+  )
+  await assert.rejects(models.start())
+  assert.match(models.failure ?? '', /ModuleNotFoundError: No module named mlx/)
+  assert.equal(models.process, undefined, 'a dead runtime was left looking alive')
+  rmSync(dir, { recursive: true, force: true })
+})
+
+test('a runtime that answers and then leaves quietly is reported, not treated as fine', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'jarvis-quiet-'))
+  const workers = join(dir, 'workers')
+  mkdirSync(workers)
+  writeFileSync(
+    join(workers, 'runtime.json'),
+    JSON.stringify({ version: 1, python: 'interpreter' }),
+  )
+  // Answers the handshake, then ends on its own with a clean status and nothing on stderr.
+  writeFileSync(
+    join(workers, 'interpreter'),
+    [
+      '#!/bin/sh',
+      'reply() {',
+      '  read -r line || exit 0',
+      '  id=$(printf "%s" "$line" | sed -n \'s/.*"id":"\\([^"]*\\)".*/\\1/p\')',
+      '  printf \'{"version":1,"id":"%s","result":{"version":1,"roles":[]}}\\n\' "$id"',
+      '}',
+      'reply',
+      'reply',
+      'exit 0',
+    ].join('\n') + '\n',
+    { mode: 0o755 },
+  )
+  writeFileSync(join(workers, 'models.py'), '')
+  const models = new Models(
+    dir,
+    workers,
+    () => {},
+    () => {},
+  )
+  assert.equal(await models.start(), true, 'the handshake did not complete')
+  assert.equal(models.failure, undefined, 'a healthy handshake reported a failure')
+  await until(() => models.failure !== undefined, 'a runtime that left on its own went unreported')
+  assert.match(models.failure!, /stopped on its own \(exit 0\)/)
+  assert.equal(models.process, undefined)
+  rmSync(dir, { recursive: true, force: true })
+})
