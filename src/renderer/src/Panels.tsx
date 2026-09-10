@@ -59,6 +59,16 @@ function MenuPanel() {
         void command({ type: 'overlay.form', form: 'orb' })
       },
     },
+    // The only way to silence a reply without the orb; hands-free ends here too.
+    ...(snapshot.voice.phase === 'speaking'
+      ? [
+          {
+            icon: VolumeX,
+            title: 'Stop speaking',
+            action: () => command({ type: 'voice.stopSpeech' }),
+          },
+        ]
+      : []),
     {
       icon: Keyboard,
       title: 'Type a thought',

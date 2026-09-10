@@ -27,6 +27,17 @@ import { Models } from '../src/core/models'
 import { runCheck } from '../src/providers/workspace'
 import { VaultIndex, chunkNote, looksSecret, noteTitle, splitFrontmatter } from '../src/core/vault'
 import { containRegion } from '../src/shared/geometry'
+import {
+  HANDS_FREE_PATIENCE_SECONDS,
+  TURN_LIMIT_SECONDS,
+  endpointingReady,
+  handsFreeReady,
+  shouldReopenMicrophone,
+  turnAction,
+  withVoiceDependencies,
+  type ListeningTurn,
+  type ResumeContext,
+} from '../src/shared/turn'
 
 function database() {
   const dir = mkdtempSync(join(tmpdir(), 'jarvis-test-'))
@@ -1099,4 +1110,97 @@ test('a runtime killed outright is named by its signal, not by an exit code it n
   assert.match(models.failure!, /stopped on its own \(SIGKILL\)/)
   assert.equal(models.process, undefined)
   rmSync(dir, { recursive: true, force: true })
+})
+
+test('a spoken turn ends on a judged pause, on the recording limit, or on nobody speaking', () => {
+  const turn = (over: Partial<ListeningTurn>): ListeningTurn => ({
+    elapsed: 1,
+    lastSpeechAt: 0,
+    lastEndpointAt: 0,
+    endpointing: false,
+    handsFree: false,
+    ...over,
+  })
+  // Without endpointing a turn only ends when the person says so, or at the recording limit.
+  assert.equal(turnAction(turn({ elapsed: 40, lastSpeechAt: 30 })), 'wait')
+  assert.equal(turnAction(turn({ elapsed: TURN_LIMIT_SECONDS, lastSpeechAt: 30 })), 'finish')
+  assert.equal(turnAction(turn({ elapsed: TURN_LIMIT_SECONDS - 0.1, lastSpeechAt: 30 })), 'wait')
+  // Endpointing examines a pause, and only after somebody has actually spoken.
+  assert.equal(turnAction(turn({ elapsed: 9, lastSpeechAt: 0, endpointing: true })), 'wait')
+  assert.equal(turnAction(turn({ elapsed: 4.1, lastSpeechAt: 3, endpointing: true })), 'wait')
+  assert.equal(turnAction(turn({ elapsed: 4.2, lastSpeechAt: 3, endpointing: true })), 'examine')
+  // One examination at a time: the next waits out the same pause again.
+  assert.equal(
+    turnAction(turn({ elapsed: 4.5, lastSpeechAt: 3, lastEndpointAt: 4.2, endpointing: true })),
+    'wait',
+  )
+  assert.equal(
+    turnAction(turn({ elapsed: 5.4, lastSpeechAt: 3, lastEndpointAt: 4.2, endpointing: true })),
+    'examine',
+  )
+  // A hands-free microphone opens on its own, so an unanswered one closes on its own.
+  assert.equal(
+    turnAction(turn({ elapsed: HANDS_FREE_PATIENCE_SECONDS - 0.1, handsFree: true })),
+    'wait',
+  )
+  assert.equal(
+    turnAction(turn({ elapsed: HANDS_FREE_PATIENCE_SECONDS, handsFree: true })),
+    'abandon',
+  )
+  // Having heard something, it waits for the endpointer like any other turn.
+  assert.equal(
+    turnAction(turn({ elapsed: 30, lastSpeechAt: 2, handsFree: true, endpointing: true })),
+    'examine',
+  )
+  // A microphone the person opened themselves is left alone until the recording limit.
+  assert.equal(turnAction(turn({ elapsed: 60, handsFree: false })), 'wait')
+})
+
+test('hands-free needs qualified endpointing, and never outlives it', () => {
+  const qualified =
+    (...ids: string[]) =>
+    (id: string) =>
+      ids.includes(id)
+  assert.equal(endpointingReady(qualified('silero', 'smart-turn')), true)
+  // Smart Turn is installed but unqualified on this Mac, which is the whole point of the gate.
+  assert.equal(endpointingReady(qualified('silero')), false)
+  assert.equal(endpointingReady(qualified()), false)
+  const on = { automaticEndpointing: true, handsFree: true }
+  assert.equal(handsFreeReady(on, qualified('silero', 'smart-turn')), true)
+  assert.equal(handsFreeReady(on, qualified('silero')), false)
+  assert.equal(
+    handsFreeReady({ automaticEndpointing: false }, qualified('silero', 'smart-turn')),
+    false,
+  )
+  // Switching endpointing off takes hands-free with it, in the same write.
+  assert.deepEqual(withVoiceDependencies(on), on)
+  assert.deepEqual(withVoiceDependencies({ automaticEndpointing: false, handsFree: true }), {
+    automaticEndpointing: false,
+    handsFree: false,
+  })
+  // Unrelated settings travel through untouched.
+  assert.deepEqual(withVoiceDependencies({ ...on, voiceSpeed: 1.2 }), { ...on, voiceSpeed: 1.2 })
+})
+
+test('the microphone reopens only for a live hands-free session that is not otherwise engaged', () => {
+  const both = (id: string) => ['silero', 'smart-turn'].includes(id)
+  const context = (over: Partial<ResumeContext> = {}): ResumeContext => ({
+    handsFree: true,
+    phase: 'off',
+    locked: false,
+    closing: false,
+    automaticEndpointing: true,
+    qualified: both,
+    ...over,
+  })
+  assert.equal(shouldReopenMicrophone(context()), true)
+  assert.equal(shouldReopenMicrophone(context({ handsFree: false })), false)
+  // Never on top of speech, thought, or a turn already open: hands-free stays half duplex.
+  for (const phase of ['listening', 'transcribing', 'thinking', 'speaking', 'error'] as const)
+    assert.equal(shouldReopenMicrophone(context({ phase })), false)
+  assert.equal(shouldReopenMicrophone(context({ locked: true })), false)
+  assert.equal(shouldReopenMicrophone(context({ closing: true })), false)
+  assert.equal(shouldReopenMicrophone(context({ automaticEndpointing: false })), false)
+  // A model removed mid-session closes the loop rather than leaving a microphone nothing ends.
+  assert.equal(shouldReopenMicrophone(context({ qualified: (id) => id === 'silero' })), false)
 })

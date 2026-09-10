@@ -1,11 +1,27 @@
 import { Headphones, Mic, Volume2 } from 'lucide-react'
+import { ENDPOINT_MODELS } from '../../../shared/turn'
 import { useJarvis } from '../state'
 import { Core } from '../Orb'
 import { Button, Group, Row, Toggle } from '../ui'
 
+/** What the microphone is doing, in the words the orb uses for the same states. */
+function microphoneStatus(voice: { phase: string; handsFree: boolean }) {
+  if (voice.phase === 'listening')
+    return voice.handsFree
+      ? 'HANDS-FREE · LISTENING · CLICK THE ORB TO FINISH'
+      : 'LISTENING · CLICK THE ORB TO FINISH'
+  if (voice.phase === 'speaking') return 'SPEECH PLAYBACK · CLICK THE ORB TO INTERRUPT'
+  if (voice.handsFree) return 'HANDS-FREE · THE MICROPHONE OPENS AGAIN AFTER THIS REPLY'
+  return 'MICROPHONE IDLE'
+}
+
 export function Voice() {
   const { snapshot, command, busy } = useJarvis()
   const granted = snapshot.permissions.microphone === 'granted'
+  const unqualified = ENDPOINT_MODELS.filter(
+    (id) => !snapshot.models.some((model) => model.id === id && model.qualified),
+  ).map((id) => snapshot.models.find((model) => model.id === id)?.name ?? id)
+  const endpointing = snapshot.settings.automaticEndpointing
   return (
     <>
       <div className="voice-card">
@@ -96,24 +112,28 @@ export function Voice() {
             <span key={index} className={index / 48 < snapshot.voice.level ? 'lit' : ''} />
           ))}
         </div>
-        <p className="metadata">
-          {snapshot.voice.phase === 'listening'
-            ? 'LISTENING · CLICK THE ORB TO FINISH'
-            : snapshot.voice.phase === 'speaking'
-              ? 'SPEECH PLAYBACK · CLICK THE ORB TO INTERRUPT'
-              : 'MICROPHONE IDLE'}
-        </p>
+        <p className="metadata">{microphoneStatus(snapshot.voice)}</p>
         <Toggle
           label="Finish a turn naturally"
-          description="Experimental: Silero and Smart Turn check a pause after you activate the microphone. Both need to pass their checks in Local models first. Click the orb to finish at any time."
-          selected={snapshot.settings.automaticEndpointing}
+          description={
+            unqualified.length
+              ? `${unqualified.join(' and ')} ${unqualified.length > 1 ? 'need' : 'needs'} to pass ${unqualified.length > 1 ? 'their checks' : 'its check'} in Local models before Jarvis can finish a turn for you.`
+              : 'Experimental: Silero and Smart Turn check a pause after you activate the microphone. Click the orb to finish at any time.'
+          }
+          isDisabled={!!unqualified.length}
+          selected={endpointing}
           onChange={(automaticEndpointing) => {
             void command({ type: 'settings.update', patch: { automaticEndpointing } })
           }}
         />
         <Toggle
           label="Hands-free conversation"
-          description="Continue listening after a response. Requires qualified voice endpointing."
+          description={
+            endpointing
+              ? 'The microphone opens again after each reply, and closes on its own if you say nothing. Click the orb while Jarvis speaks to stop.'
+              : 'Continue listening after a response. Requires qualified voice endpointing.'
+          }
+          isDisabled={!endpointing}
           selected={snapshot.settings.handsFree}
           onChange={(handsFree) => {
             void command({ type: 'settings.update', patch: { handsFree } })

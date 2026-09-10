@@ -216,7 +216,7 @@ export function emptySnapshot(): AppSnapshot {
   return {
     version: 1,
     settings: structuredClone(DEFAULT_SETTINGS),
-    voice: { phase: 'off', level: 0, partial: '', generation: 0 },
+    voice: { phase: 'off', level: 0, partial: '', generation: 0, handsFree: false },
     tasks: [],
     events: [],
     approvals: [],
