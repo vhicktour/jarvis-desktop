@@ -1,0 +1,27 @@
+{
+  "generatedAt": "2026-09-10T20:10:10.746Z",
+  "scope": "Region capture through the native helper: crop position, size, protected-app refusal, and bounds refusal.",
+  "displays": 1,
+  "captures": {
+    "full": {
+      "width": 1280,
+      "height": 827,
+      "bytes": 224177
+    },
+    "left": {
+      "width": 1028,
+      "height": 1329,
+      "bytes": 226909
+    },
+    "right": {
+      "width": 1028,
+      "height": 1329,
+      "bytes": 244619
+    }
+  },
+  "halvesDiffer": true,
+  "protectedAppRefusal": "A protected application is inside that area. Choose another one.",
+  "tooSmallRefusal": "Draw a larger area to share.",
+  "offDisplayRefusal": "That area is not on a connected display.",
+  "passed": true
+}

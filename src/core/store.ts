@@ -12,13 +12,41 @@ import {
   type Message,
   type Project,
   type Routine,
+  type VaultExcerpt,
 } from '../shared/contracts'
-import { now, uid, invariant } from './util'
+import { hash, now, uid, invariant } from './util'
 
 // The package ships declarations but omits them from its exports map.
 const Database = createRequire(import.meta.url)(
   'better-sqlite3-multiple-ciphers',
 ) as typeof CipherDatabase
+
+/** Reciprocal rank fusion: text and vector agreement lifts a result above either alone. */
+function fuse(ranks: Map<string, number>, ids: string[]) {
+  ids.forEach((id, index) => ranks.set(id, (ranks.get(id) ?? 0) + 1 / (60 + index)))
+}
+function magnitude(values: number[]) {
+  return Math.sqrt(values.reduce((sum, value) => sum + value * value, 0)) || 1
+}
+function similarity(stored: Buffer, query: number[], queryNorm: number) {
+  const values = new Float32Array(
+    stored.buffer.slice(stored.byteOffset, stored.byteOffset + stored.byteLength),
+  )
+  let dot = 0
+  let norm = 0
+  values.forEach((value, index) => {
+    dot += value * query[index]
+    norm += value * value
+  })
+  return dot / (queryNorm * Math.sqrt(norm || 1))
+}
+function vectorBlob(vector: number[]) {
+  invariant(
+    vector.length > 0 && vector.length <= 4096 && vector.every(Number.isFinite),
+    'Invalid embedding.',
+  )
+  return Buffer.from(new Float32Array(vector).buffer)
+}
 
 export class Store {
   readonly db: InstanceType<typeof CipherDatabase>
@@ -48,8 +76,22 @@ export class Store {
 
   private migrate() {
     const version = this.db.pragma('user_version', { simple: true }) as number
-    invariant(version <= 1, 'This database was created by a newer version of Jarvis.')
-    if (version === 1) return
+    invariant(version <= 2, 'This database was created by a newer version of Jarvis.')
+    if (version < 1) this.createSchema()
+    // Indexed notes are derived from files the user still owns, so this migration adds no data.
+    if (version < 2)
+      this.db.transaction(() => {
+        this.db.exec(`
+        CREATE TABLE notes (id TEXT PRIMARY KEY, path TEXT UNIQUE NOT NULL, title TEXT NOT NULL, scope TEXT NOT NULL, updated_at TEXT NOT NULL, content_hash TEXT NOT NULL, bytes INTEGER NOT NULL, redacted INTEGER NOT NULL DEFAULT 0);
+        CREATE TABLE note_chunks (id TEXT PRIMARY KEY, note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE, sequence INTEGER NOT NULL, heading TEXT NOT NULL, text TEXT NOT NULL, model_revision TEXT, dimension INTEGER, vector BLOB);
+        CREATE VIRTUAL TABLE note_fts USING fts5(id UNINDEXED, scope UNINDEXED, text);
+        CREATE INDEX note_chunk_note ON note_chunks(note_id);
+        PRAGMA user_version = 2;
+      `)
+      })()
+  }
+
+  private createSchema() {
     this.db.transaction(() => {
       this.db.exec(`
         CREATE TABLE settings (key TEXT PRIMARY KEY, payload TEXT NOT NULL);
@@ -341,56 +383,54 @@ export class Store {
       conversations: this.rows('SELECT payload FROM messages ORDER BY created_at'),
     }
   }
+  /** The table name is one of two literals in this file; only the query text is user input. */
+  private matchText(table: 'memory_fts' | 'note_fts', query: string, scope: string, limit = 30) {
+    const words = query.match(/[\p{L}\p{N}_-]+/gu)?.slice(0, 20) ?? []
+    if (!words.length) return []
+    return (
+      this.db
+        .prepare(`SELECT id FROM ${table} WHERE ${table} MATCH ? AND scope=? ORDER BY rank LIMIT ?`)
+        .all(
+          words.map((word) => '"' + word.replaceAll('"', '""') + '"').join(' OR '),
+          scope,
+          limit,
+        ) as { id: string }[]
+    ).map((row) => row.id)
+  }
+  private matchVectors(
+    sql: string,
+    scope: string,
+    vector: { values: number[]; revision: string },
+    limit = 30,
+  ) {
+    const rows = this.db.prepare(sql).all(scope, vector.revision, vector.values.length) as {
+      id: string
+      vector: Buffer
+    }[]
+    const queryNorm = magnitude(vector.values)
+    return rows
+      .map((row) => ({ id: row.id, score: similarity(row.vector, vector.values, queryNorm) }))
+      .filter((item) => item.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit)
+      .map((item) => item.id)
+  }
   searchMemory(
     query: string,
     scope: string,
     vector?: { values: number[]; revision: string },
   ): MemoryRecord[] {
-    const words = query.match(/[\p{L}\p{N}_-]+/gu)?.slice(0, 20) ?? []
     const ranks = new Map<string, number>()
-    if (words.length) {
-      const matches = this.db
-        .prepare(
-          'SELECT id FROM memory_fts WHERE memory_fts MATCH ? AND scope=? ORDER BY rank LIMIT 30',
-        )
-        .all(words.map((word) => '"' + word.replaceAll('"', '""') + '"').join(' OR '), scope) as {
-        id: string
-      }[]
-      matches.forEach((item, index) => ranks.set(item.id, 1 / (60 + index)))
-    }
-    if (vector) {
-      const rows = this.db
-        .prepare(
-          'SELECT c.memory_id, c.vector FROM memory_chunks c JOIN memories m ON c.memory_id=m.id WHERE m.scope=? AND m.active=1 AND c.model_revision=? AND c.dimension=? LIMIT 20000',
-        )
-        .all(scope, vector.revision, vector.values.length) as {
-        memory_id: string
-        vector: Buffer
-      }[]
-      const queryNorm = Math.sqrt(vector.values.reduce((s, n) => s + n * n, 0)) || 1
-      const matches = rows
-        .map((row) => {
-          const values = new Float32Array(
-            row.vector.buffer.slice(
-              row.vector.byteOffset,
-              row.vector.byteOffset + row.vector.byteLength,
-            ),
-          )
-          let dot = 0,
-            norm = 0
-          values.forEach((n, index) => {
-            dot += n * vector.values[index]
-            norm += n * n
-          })
-          return { id: row.memory_id, score: dot / (queryNorm * Math.sqrt(norm || 1)) }
-        })
-        .filter((item) => item.score > 0)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 30)
-      matches.forEach((item, index) =>
-        ranks.set(item.id, (ranks.get(item.id) ?? 0) + 1 / (60 + index)),
+    fuse(ranks, this.matchText('memory_fts', query, scope))
+    if (vector)
+      fuse(
+        ranks,
+        this.matchVectors(
+          'SELECT c.memory_id AS id, c.vector FROM memory_chunks c JOIN memories m ON c.memory_id=m.id WHERE m.scope=? AND m.active=1 AND c.model_revision=? AND c.dimension=? LIMIT 20000',
+          scope,
+          vector,
+        ),
       )
-    }
     const records = new Map(
       this.memories(scope)
         .filter((m) => m.reviewState === 'approved')
@@ -402,16 +442,142 @@ export class Store {
       .flatMap(([id]) => (records.has(id) ? [records.get(id)!] : []))
   }
   embedMemory(id: string, revision: string, vector: number[]) {
-    invariant(
-      vector.length > 0 && vector.length <= 4096 && vector.every(Number.isFinite),
-      'Invalid embedding.',
-    )
-    const buffer = Buffer.from(new Float32Array(vector).buffer)
     this.db
       .prepare(
         'INSERT INTO memory_chunks VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET model_revision=excluded.model_revision, dimension=excluded.dimension, vector=excluded.vector',
       )
-      .run(id, id, revision, vector.length, buffer)
+      .run(id, id, revision, vector.length, vectorBlob(vector))
+  }
+
+  /** Notes are an index over files the user still owns; forgetting removes only the index. */
+  noteDigest(): Map<string, string> {
+    return new Map(
+      (
+        this.db.prepare('SELECT path, content_hash FROM notes').all() as {
+          path: string
+          content_hash: string
+        }[]
+      ).map((row) => [row.path, row.content_hash]),
+    )
+  }
+  saveNote(
+    note: {
+      path: string
+      title: string
+      scope: string
+      contentHash: string
+      bytes: number
+      redacted?: number
+    },
+    chunks: { heading: string; text: string }[],
+  ) {
+    const id = hash(note.path)
+    this.db.transaction(() => {
+      this.db
+        .prepare(
+          'INSERT INTO notes VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET title=excluded.title, scope=excluded.scope, updated_at=excluded.updated_at, content_hash=excluded.content_hash, bytes=excluded.bytes, redacted=excluded.redacted',
+        )
+        .run(
+          id,
+          note.path,
+          note.title,
+          note.scope,
+          now(),
+          note.contentHash,
+          note.bytes,
+          note.redacted ?? 0,
+        )
+      this.dropChunks(id)
+      const insertChunk = this.db.prepare(
+        'INSERT INTO note_chunks (id, note_id, sequence, heading, text) VALUES (?, ?, ?, ?, ?)',
+      )
+      const insertText = this.db.prepare('INSERT INTO note_fts VALUES (?, ?, ?)')
+      chunks.forEach((chunk, sequence) => {
+        const chunkId = hash(`${note.path}:${sequence}`)
+        insertChunk.run(chunkId, id, sequence, chunk.heading, chunk.text)
+        insertText.run(chunkId, note.scope, chunk.text)
+      })
+    })()
+    return id
+  }
+  private dropChunks(noteId: string) {
+    const removeText = this.db.prepare('DELETE FROM note_fts WHERE id=?')
+    for (const row of this.db.prepare('SELECT id FROM note_chunks WHERE note_id=?').all(noteId) as {
+      id: string
+    }[])
+      removeText.run(row.id)
+    this.db.prepare('DELETE FROM note_chunks WHERE note_id=?').run(noteId)
+  }
+  removeNotes(paths: string[]) {
+    this.db.transaction(() => {
+      for (const path of paths) {
+        const id = hash(path)
+        this.dropChunks(id)
+        this.db.prepare('DELETE FROM notes WHERE id=?').run(id)
+      }
+    })()
+  }
+  clearNotes() {
+    this.db.transaction(() => {
+      this.db.exec('DELETE FROM note_fts; DELETE FROM note_chunks; DELETE FROM notes;')
+    })()
+    this.db.pragma('wal_checkpoint(TRUNCATE)')
+  }
+  noteSummary() {
+    const notes = this.db
+      .prepare(
+        'SELECT COUNT(*) AS count, COALESCE(SUM(bytes), 0) AS bytes, COALESCE(SUM(redacted), 0) AS redacted FROM notes',
+      )
+      .get() as { count: number; bytes: number; redacted: number }
+    const chunks = this.db
+      .prepare('SELECT COUNT(*) AS count, COUNT(vector) AS embedded FROM note_chunks')
+      .get() as { count: number; embedded: number }
+    return {
+      notes: notes.count,
+      bytes: notes.bytes,
+      redacted: notes.redacted,
+      chunks: chunks.count,
+      embedded: chunks.embedded,
+    }
+  }
+  staleNoteChunks(revision: string, limit: number) {
+    return this.db
+      .prepare('SELECT id, text FROM note_chunks WHERE model_revision IS NOT ? LIMIT ?')
+      .all(revision, limit) as { id: string; text: string }[]
+  }
+  embedNote(id: string, revision: string, vector: number[]) {
+    this.db
+      .prepare('UPDATE note_chunks SET model_revision=?, dimension=?, vector=? WHERE id=?')
+      .run(revision, vector.length, vectorBlob(vector), id)
+  }
+  searchNotes(
+    query: string,
+    scope: string,
+    vector?: { values: number[]; revision: string },
+    limit = 4,
+  ): VaultExcerpt[] {
+    const ranks = new Map<string, number>()
+    fuse(ranks, this.matchText('note_fts', query, scope))
+    if (vector)
+      fuse(
+        ranks,
+        this.matchVectors(
+          'SELECT c.id AS id, c.vector FROM note_chunks c JOIN notes n ON c.note_id=n.id WHERE n.scope=? AND c.model_revision=? AND c.dimension=? LIMIT 20000',
+          scope,
+          vector,
+        ),
+      )
+    const ids = [...ranks]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, limit)
+      .map(([id]) => id)
+    if (!ids.length) return []
+    const rows = this.db
+      .prepare(
+        `SELECT c.id, c.heading, c.text, n.path, n.title FROM note_chunks c JOIN notes n ON c.note_id=n.id WHERE c.id IN (${ids.map(() => '?').join(',')})`,
+      )
+      .all(...ids) as VaultExcerpt[]
+    return ids.flatMap((id) => rows.filter((row) => row.id === id))
   }
   projects(): Project[] {
     return this.rows('SELECT payload FROM projects') as Project[]

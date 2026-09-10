@@ -43,7 +43,22 @@ export function previewAPI(): JarvisAPI {
       else if (command.type === 'settings.open') {
         emit({ type: 'section', section: command.section ?? 'general' })
         window.dispatchEvent(new CustomEvent('preview:settings'))
-      } else if (command.type === 'voice.toggle')
+      } else if (command.type === 'context.selectRegion')
+        window.dispatchEvent(new CustomEvent('preview:region'))
+      else if (command.type === 'context.cancelRegion')
+        window.dispatchEvent(new CustomEvent('preview:region-closed'))
+      else if (command.type === 'context.regionChosen')
+        window.dispatchEvent(
+          new CustomEvent('preview:region-closed', {
+            detail: {
+              x: command.x,
+              y: command.y,
+              width: command.width,
+              height: command.height,
+            },
+          }),
+        )
+      else if (command.type === 'voice.toggle')
         snapshot.voice.phase = snapshot.voice.phase === 'off' ? 'listening' : 'off'
       else if (command.type === 'voice.audition')
         snapshot.voice.phase = snapshot.voice.phase === 'speaking' ? 'off' : 'speaking'

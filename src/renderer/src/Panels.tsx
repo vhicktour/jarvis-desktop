@@ -7,6 +7,7 @@ import {
   Check,
   ChevronRight,
   Clock3,
+  Crop,
   Eye,
   FileText,
   Keyboard,
@@ -566,17 +567,18 @@ function ContextPanel() {
             <h2 className="task-objective">{snapshot.observation.title}</h2>
             <p className="muted">{snapshot.observation.app}</p>
             <div className="actions">
-              <Button
-                isDisabled={snapshot.observation.windowId === 0}
-                onPress={() => {
-                  void command({
-                    type: 'context.follow',
-                    following: !snapshot.observation?.following,
-                  })
-                }}
-              >
-                {snapshot.observation.following ? 'Stop following' : 'Follow this window'}
-              </Button>
+              {snapshot.observation.windowId > 0 && (
+                <Button
+                  onPress={() => {
+                    void command({
+                      type: 'context.follow',
+                      following: !snapshot.observation?.following,
+                    })
+                  }}
+                >
+                  {snapshot.observation.following ? 'Stop following' : 'Follow this window'}
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 onPress={() => {
@@ -604,7 +606,16 @@ function ContextPanel() {
           </Empty>
         ) : (
           <>
-            <p className="muted">Only the window you select will be captured.</p>
+            <p className="muted">Only what you choose here will be captured.</p>
+            <Button
+              variant="primary"
+              onPress={() => {
+                void command({ type: 'context.selectRegion' })
+              }}
+            >
+              <Crop size={13} />
+              Draw an area
+            </Button>
             <div className="window-list">
               {windows.map((window) => (
                 <Button

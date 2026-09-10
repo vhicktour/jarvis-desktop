@@ -1,11 +1,11 @@
 {
-  "generatedAt": "2026-09-10T18:06:33.203Z",
+  "generatedAt": "2026-09-10T19:14:11.799Z",
   "trials": 100,
   "outputRoute": "MacBook Pro Speakers",
   "boundary": "NDJSON request through AVAudioPlayer.stop acknowledgement",
   "hardwareAcousticLatencyMeasured": false,
-  "stopP95Ms": 10.79308299999957,
-  "stopMaxMs": 12.687000000000808,
+  "stopP95Ms": 10.855750000000171,
+  "stopMaxMs": 11.595749999999498,
   "meteringSamples": 21,
   "meteringVaries": true
 }

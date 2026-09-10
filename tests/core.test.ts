@@ -18,8 +18,10 @@ import { TaskEngine, type TaskExecutor, type TaskRun } from '../src/core/tasks'
 import { hash, now, uid } from '../src/core/util'
 import { Settings, Task, Command } from '../src/shared/contracts'
 import { scopedPath, literalFileContent, localExecutor } from '../src/core/local-task'
-import type { Models } from '../src/core/models'
+import { Models } from '../src/core/models'
 import { runCheck } from '../src/providers/workspace'
+import { VaultIndex, chunkNote, looksSecret, noteTitle, splitFrontmatter } from '../src/core/vault'
+import { containRegion } from '../src/shared/geometry'
 
 function database() {
   const dir = mkdtempSync(join(tmpdir(), 'jarvis-test-'))
@@ -118,6 +120,13 @@ test('memory retrieval respects scope, review status, correction, and derived de
     db.store.searchMemory('', 'project-a', { revision: 'fixture-v1', values: [1, 0, 0] })[0].id,
     corrected.id,
   )
+  // Saving a record clears its chunk, which is why approving a memory writes the embedding again.
+  db.store.saveMemory({ ...corrected, reviewState: 'approved' })
+  assert.equal(
+    db.store.searchMemory('', 'project-a', { revision: 'fixture-v1', values: [1, 0, 0] }).length,
+    0,
+  )
+  db.store.embedMemory(corrected.id, 'fixture-v1', [1, 0, 0])
   db.store.forget(original.id)
   assert.equal(db.store.searchMemory('deployment', 'project-a').length, 0)
   assert.equal(db.store.memory(corrected.id), undefined)
@@ -617,4 +626,159 @@ test('provider usage remains cumulative across task revisions', async () => {
   assert.equal(db.store.getTask(task.id).costUsd, 0.6)
   await engine.shutdown()
   db.close()
+})
+
+test('a model check records what it observed and never runs twice at once', async () => {
+  const manifests: Record<string, { revision: string; qualified: boolean } | undefined> = {
+    silero: { revision: 'silero-1', qualified: false },
+    'smart-turn': { revision: 'turn-1', qualified: false },
+  }
+  let checks = 0
+  const models = new Models(
+    tmpdir(),
+    tmpdir(),
+    () => {},
+    () => {},
+  )
+  models.process = {
+    request: async (method: string, params: { id: string }) => {
+      if (method === 'models.status') return manifests
+      checks++
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      manifests[params.id] = { revision: 'turn-1', qualified: true }
+      return { id: params.id, qualified: true, checks: [], detail: 'Fixture passed.' }
+    },
+  } as unknown as (typeof models)['process']
+  await models.refresh()
+  // Installed is not qualified: the promotion gate reads the second flag, not the first.
+  assert.equal(models.has('smart-turn'), true)
+  assert.equal(models.qualified('smart-turn'), false)
+  assert.equal(models.has('kokoro'), false)
+  const running = models.qualify('smart-turn')
+  await assert.rejects(models.qualify('smart-turn'), /already being checked/)
+  assert.equal((await running).qualified, true)
+  assert.equal(checks, 1)
+  assert.equal(models.qualified('smart-turn'), true)
+  assert.equal(models.qualified('silero'), false)
+  await assert.rejects(models.qualify('nothing-here'), /Unknown model/)
+})
+
+test('note chunking keeps its heading, its frontmatter title, and its credentials out', () => {
+  const raw =
+    '---\ntitle: Overlay decisions\ntags: [ jarvis ]\n---\n\n# Overlay\n\nThe orb docks 24 points inside the work area.\n\n## Credentials\n\napi_key: abcdefghijklmnop\n'
+  const { frontmatter, body } = splitFrontmatter(raw)
+  assert.match(frontmatter, /^title: Overlay decisions$/m)
+  assert.equal(body.startsWith('\n# Overlay'), true)
+  assert.equal(noteTitle('personal/orb.md', body, frontmatter), 'Overlay decisions')
+  assert.equal(noteTitle('personal/orb.md', body, ''), 'Overlay')
+  assert.equal(noteTitle('personal/orb.md', 'no heading here', ''), 'orb')
+  const chunks = chunkNote(body)
+  assert.deepEqual(
+    chunks.map((chunk) => chunk.heading),
+    ['Overlay', 'Credentials'],
+  )
+  assert.equal(looksSecret(chunks[0].text), false)
+  assert.equal(looksSecret(chunks[1].text), true)
+  // A section without blank lines still breaks rather than growing without bound.
+  const dense = chunkNote(
+    '# Table\n' + Array.from({ length: 400 }, (_, i) => `| row ${i} |`).join('\n'),
+    200,
+  )
+  assert.ok(dense.length > 1, 'an unbroken block was never split')
+  assert.ok(Math.max(...dense.map((chunk) => chunk.text.length)) <= 4000)
+})
+
+test('a notes folder is indexed for recall, re-read on change, and forgotten without touching memory', async () => {
+  const db = database()
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'jarvis-vault-')))
+  const note = join(dir, 'personal', 'orb.md')
+  mkdirSync(join(dir, 'personal'))
+  mkdirSync(join(dir, '.obsidian'))
+  writeFileSync(join(dir, '.obsidian', 'workspace.json'), '{"orb":"docks"}')
+  writeFileSync(join(dir, 'ignored.txt'), 'The orb docks in a file Jarvis does not index.')
+  writeFileSync(
+    note,
+    '---\ntitle: Overlay decisions\n---\n\n# Overlay\n\nThe orb docks 24 points inside the work area.\n\n## Credentials\n\napi_key: abcdefghijklmnop\n',
+  )
+  db.store.saveMemory(memory('I prefer the orb on the right.'))
+  const models = { records: [] } as unknown as Models
+  const vault = new VaultIndex(db.store, models, () => {})
+  await vault.connect(dir)
+  await vault.sync()
+  assert.equal(vault.status().notes, 1)
+  assert.equal(vault.status().chunks, 1, 'the credential passage was indexed')
+  assert.equal(vault.status().redacted, 1)
+  assert.equal(vault.status().skipped, 0)
+  assert.equal(vault.status().path, dir)
+  const found = db.store.searchNotes('orb docks work area', 'personal')
+  assert.equal(found.length, 1)
+  assert.equal(found[0].title, 'Overlay decisions')
+  assert.equal(found[0].heading, 'Overlay')
+  assert.match(found[0].text, /24 points/)
+  assert.equal(db.store.searchNotes('abcdefghijklmnop', 'personal').length, 0)
+  assert.equal(db.store.searchNotes('orb docks', 'brief-project').length, 0)
+  writeFileSync(join(dir, 'plain.md'), '# Plain\n\nNothing sensitive here at all.\n')
+  await vault.sync()
+  assert.equal(vault.status().notes, 2)
+  // An incremental pass re-reads one note but must still report the whole index.
+  assert.equal(vault.status().redacted, 1)
+  // Reopening must not replay the migration that created the note tables.
+  const reopened = new Store(db.file, db.key)
+  assert.equal(reopened.noteSummary().notes, 2)
+  reopened.close()
+  writeFileSync(note, '# Overlay\n\nThe orb now docks 32 points inside the work area.\n')
+  await vault.sync()
+  assert.match(db.store.searchNotes('docks 32', 'personal')[0].text, /32 points/)
+  assert.equal(vault.status().notes, 2)
+  assert.equal(vault.status().redacted, 0, 'the rewritten note no longer holds a credential')
+  rmSync(note)
+  rmSync(join(dir, 'plain.md'))
+  await vault.sync()
+  assert.equal(vault.status().notes, 0)
+  assert.equal(db.store.searchNotes('docks', 'personal').length, 0)
+  vault.forget()
+  assert.equal(vault.status().path, undefined)
+  assert.equal(db.store.searchMemory('orb right', 'personal').length, 1, 'memory was forgotten too')
+  vault.stop()
+  rmSync(dir, { recursive: true, force: true })
+  db.close()
+})
+
+test('an existing database gains the note index without disturbing what it already holds', () => {
+  const db = database()
+  db.store.saveMemory(memory('Keep this through the upgrade.'))
+  // Return the file to the shape the previous release left behind.
+  db.store.db.exec(
+    'DROP TABLE note_fts; DROP TABLE note_chunks; DROP TABLE notes; PRAGMA user_version = 1;',
+  )
+  db.store.close()
+  const upgraded = new Store(db.file, db.key)
+  assert.equal(upgraded.db.pragma('user_version', { simple: true }), 2)
+  assert.deepEqual(upgraded.noteSummary(), {
+    notes: 0,
+    chunks: 0,
+    embedded: 0,
+    bytes: 0,
+    redacted: 0,
+  })
+  assert.equal(upgraded.searchMemory('upgrade', 'personal').length, 1)
+  upgraded.saveNote({ path: 'a.md', title: 'A', scope: 'personal', contentHash: 'h', bytes: 4 }, [
+    { heading: '', text: 'Upgraded index accepts writes.' },
+  ])
+  assert.equal(upgraded.searchNotes('upgraded index', 'personal').length, 1)
+  upgraded.close()
+  db.close()
+})
+
+test('a drawn region stays on screen and never shrinks below the capture minimum', () => {
+  const view = { width: 1000, height: 800 }
+  const at = (x: number, y: number, width: number, height: number) =>
+    containRegion({ x, y, width, height }, view)
+  assert.deepEqual(at(10, 20, 300, 200), { x: 10, y: 20, width: 300, height: 200 })
+  assert.deepEqual(at(950, 780, 300, 200), { x: 700, y: 600, width: 300, height: 200 })
+  assert.deepEqual(at(-50, -50, 300, 200), { x: 0, y: 0, width: 300, height: 200 })
+  // The native capture refuses anything under sixteen points, so the interface cannot offer one.
+  assert.deepEqual(at(10, 10, 2, 2), { x: 10, y: 10, width: 16, height: 16 })
+  assert.deepEqual(at(0, 0, 5000, 5000), { x: 0, y: 0, width: 1000, height: 800 })
+  assert.deepEqual(at(10.4, 10.6, 100.5, 100.4), { x: 10, y: 11, width: 101, height: 100 })
 })

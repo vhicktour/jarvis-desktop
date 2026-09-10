@@ -25,15 +25,15 @@ Forms use noValidate and shared validation. Successful local saves keep the curr
 
 ## Permissions and effects
 
-Selected projects and observations define context scope. A model, repository, webpage, or tool output cannot grant permission. Approvals bind to task revision, canonical arguments, target identity, policy version, and expiry. External sends and changes require exact payload review. Missing enforcement disables the affected effect. Locking the Mac pauses new effects.
+Selected projects and observations define context scope. An excluded application inside a drawn screen area refuses the capture, exactly as it does for a window. A model, repository, webpage, note, or tool output cannot grant permission. Approvals bind to task revision, canonical arguments, target identity, policy version, and expiry. External sends and changes require exact payload review. Missing enforcement disables the affected effect. Locking the Mac pauses new effects.
 
 ## Data and recovery
 
-Raw audio and captures are ephemeral. Transcripts expire after 30 days, task receipts after 90 days, explicit memories when deleted. Forgetting also removes embeddings and derived retrieval data. Local encrypted storage is required for durable user content. Local-only mode never silently uses a cloud model. Provider loss preserves tasks; uncertain mutations are not retried automatically. Worker restarts are bounded.
+Memory a model infers is proposed, never assumed: a proposed memory stays out of recall until the person accepts it, and accepting it restores its embedding. Raw audio and captures are ephemeral. Transcripts expire after 30 days, task receipts after 90 days, explicit memories when deleted. Forgetting also removes embeddings and derived retrieval data. A chosen notes folder is indexed rather than copied into memory: passages that read like credentials are never indexed, the notes themselves are never modified, and forgetting the index removes its passages and their embeddings. Local encrypted storage is required for durable user content. Local-only mode never silently uses a cloud model. Provider loss preserves tasks; uncertain mutations are not retried automatically. Worker restarts are bounded.
 
 ## Native interaction
 
-Passive overlays use showInactive and never steal focus. Explicit text entry may focus Jarvis. Pinning disables automatic travel. Approvals, dragging, and pointer/keyboard interaction suspend automatic movement. Saved anchors are clamped after display changes. Transparent margins pass through clicks. Shortcut registration failure is shown in Settings and never silently changes the configured shortcut.
+Passive overlays use showInactive and never steal focus. Explicit text entry and drawing a screen area may focus Jarvis. The area selector answers the pointer and the keyboard alike: arrow keys move the area, Shift with them resizes it, Enter shares it, Escape cancels it, and it never appears in its own capture. Pinning disables automatic travel. Approvals, dragging, and pointer/keyboard interaction suspend automatic movement. Saved anchors are clamped after display changes. Transparent margins pass through clicks. Shortcut registration failure is shown in Settings and never silently changes the configured shortcut.
 
 ## Accessibility and locale
 

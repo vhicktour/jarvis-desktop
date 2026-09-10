@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-10T17:58:01.189Z",
+  "generatedAt": "2026-09-10T19:12:29.114Z",
   "microphoneRouteTested": false,
   "tts": {
     "duration": 3.85,
@@ -7,11 +7,11 @@
   },
   "parakeet": {
     "text": "Good evening, I am Jarvis, ready when you are.",
-    "elapsedSeconds": 4.695963541
+    "elapsedSeconds": 4.118418959
   },
   "whisper": {
     "text": "Good evening, I am Jarvis, ready when you are.",
-    "elapsedSeconds": 0.9145314589999998
+    "elapsedSeconds": 0.8579307090000002
   },
   "reasoning": {
     "text": "4"
@@ -24,7 +24,7 @@
     "hasSpeech": true,
     "speechAtEnd": false,
     "complete": false,
-    "probability": 0.59721440076828
+    "probability": 0.3474663496017456
   },
   "endpointSilence": {
     "hasSpeech": false,
@@ -39,8 +39,8 @@
   "memory": {
     "version": 1,
     "mlx": true,
-    "memory": 335670066,
-    "peakMemory": 3246019938
+    "memory": 335670058,
+    "peakMemory": 3246019930
   },
   "modelRevisions": [
     {

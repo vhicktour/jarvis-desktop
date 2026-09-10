@@ -2,12 +2,13 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { JsonProcess } from './process'
 import { MODELS } from '../shared/defaults'
-import type { ModelRecord } from '../shared/contracts'
+import type { ModelRecord, QualificationResult } from '../shared/contracts'
 import { safeError } from './util'
 
 export class Models {
   process?: JsonProcess
   records = structuredClone(MODELS)
+  private qualifying = new Set<string>()
   constructor(
     private dataDir: string,
     private workersDir: string,
@@ -86,15 +87,38 @@ export class Models {
       this.changed()
     }
   }
-  request<T = any>(method: string, params: unknown, signal?: AbortSignal) {
+  /** Observes this revision’s actual behavior on this Mac and records the result. */
+  async qualify(id: string) {
+    const model = this.records.find((m) => m.id === id)
+    if (!model) throw new Error('Unknown model.')
+    if (this.qualifying.has(id)) throw new Error(`${model.name} is already being checked.`)
+    this.qualifying.add(id)
+    try {
+      // Checks render their own fixtures and load a second model, so they outlast a request.
+      const result = await this.request<QualificationResult>(
+        'model.qualify',
+        { id },
+        undefined,
+        900_000,
+      )
+      await this.refresh()
+      return result
+    } finally {
+      this.qualifying.delete(id)
+    }
+  }
+  request<T = any>(method: string, params: unknown, signal?: AbortSignal, timeout = 300_000) {
     if (!this.process)
       throw new Error(
         'Your local model runtime is not installed. Open Settings → Models to set it up.',
       )
-    return this.process.request<T>(method, params, 300_000, signal)
+    return this.process.request<T>(method, params, timeout, signal)
   }
   has(id: string) {
     return this.records.some((m) => m.id === id && m.status === 'installed')
+  }
+  qualified(id: string) {
+    return this.records.some((m) => m.id === id && m.status === 'installed' && m.qualified)
   }
   stop() {
     this.process?.stop()

@@ -30,6 +30,47 @@ func outputRoute() -> String {
 func axValue(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
     var value: CFTypeRef?; guard AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success else { return nil }; return value
 }
+func axString(_ element: AXUIElement, _ name: String) -> String? {
+    guard let value = axValue(element, name) as? String, !value.isEmpty else { return nil }
+    return value
+}
+func axChildren(_ element: AXUIElement) -> [AXUIElement] {
+    (axValue(element, kAXChildrenAttribute as String) as? [AXUIElement]) ?? []
+}
+func axActions(_ element: AXUIElement) -> [String] {
+    var names: CFArray?
+    guard AXUIElementCopyActionNames(element, &names) == .success else { return [] }
+    return (names as? [String]) ?? []
+}
+func axFrame(_ element: AXUIElement) -> CGRect? {
+    guard let position = axValue(element, kAXPositionAttribute), let size = axValue(element, kAXSizeAttribute) else { return nil }
+    var origin = CGPoint.zero; var dimensions = CGSize.zero
+    guard AXValueGetValue(position as! AXValue, .cgPoint, &origin), AXValueGetValue(size as! AXValue, .cgSize, &dimensions) else { return nil }
+    return CGRect(origin: origin, size: dimensions)
+}
+/** The label a person would read on the control, in the order Accessibility offers it. */
+func axLabel(_ element: AXUIElement) -> String {
+    axString(element, kAXTitleAttribute as String)
+        ?? axString(element, kAXDescriptionAttribute as String)
+        ?? axString(element, kAXValueAttribute as String)
+        ?? ""
+}
+/** Only controls that actually declare a press are listed; a role allowlist would over-promise. */
+func axDescribe(_ element: AXUIElement, path: [Int], depth: Int, into found: inout [[String: Any]], limit: Int) {
+    if found.count >= limit || depth > 12 { return }
+    let label = axLabel(element)
+    if !label.isEmpty, axActions(element).contains(kAXPressAction as String) {
+        let frame = axFrame(element) ?? .zero
+        found.append([
+            "path": path, "role": axString(element, kAXRoleAttribute as String) ?? "", "label": String(label.prefix(200)),
+            "enabled": (axValue(element, kAXEnabledAttribute as String) as? Bool) ?? true,
+            "x": frame.minX, "y": frame.minY, "width": frame.width, "height": frame.height,
+        ])
+    }
+    for (index, child) in axChildren(element).enumerated() {
+        axDescribe(child, path: path + [index], depth: depth + 1, into: &found, limit: limit)
+    }
+}
 
 final class AudioHistory {
     private let lock = NSLock()
@@ -74,9 +115,18 @@ final class AudioHistory {
         switch AVCaptureDevice.authorizationStatus(for: .audio) { case .authorized: microphone = "granted"; case .denied: microphone = "denied"; case .restricted: microphone = "restricted"; default: microphone = "not-determined" }
         return ["microphone": microphone, "screen": CGPreflightScreenCaptureAccess() ? "granted" : "not-determined", "accessibility": AXIsProcessTrusted(), "calendars": String(describing: EKEventStore.authorizationStatus(for: .event)), "reminders": String(describing: EKEventStore.authorizationStatus(for: .reminder))]
     }
+    func isOwn(_ window: SCWindow) -> Bool {
+        window.owningApplication?.bundleIdentifier == "personal.jarvis.desktop" || window.owningApplication?.processID == ProcessInfo.processInfo.processIdentifier || window.owningApplication?.applicationName == "Electron"
+    }
     func windows() async throws -> [SCWindow] {
         let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
-        return content.windows.filter { $0.owningApplication?.bundleIdentifier != "personal.jarvis.desktop" && $0.owningApplication?.processID != ProcessInfo.processInfo.processIdentifier && $0.owningApplication?.applicationName != "Electron" && $0.frame.width > 80 && $0.frame.height > 50 && !($0.title ?? "").isEmpty }
+        return content.windows.filter { !isOwn($0) && $0.frame.width > 80 && $0.frame.height > 50 && !($0.title ?? "").isEmpty }
+    }
+    func writeCapture(_ image: CGImage) throws -> URL {
+        guard let data = NSBitmapImageRep(cgImage: image).representation(using: .jpeg, properties: [.compressionFactor: 0.65]) else { throw fail("Could not encode the capture.") }
+        let path = ephemeral.appendingPathComponent(UUID().uuidString + ".jpg")
+        try data.write(to: path, options: [.atomic])
+        return path
     }
     func execute(_ method: String, _ p: [String: Any]) async throws -> Any {
         switch method {
@@ -197,11 +247,29 @@ final class AudioHistory {
             let filter = SCContentFilter(desktopIndependentWindow: window)
             let configuration = SCStreamConfiguration(); let scale = min(1, 1280 / window.frame.width)
             configuration.width = Int(window.frame.width * scale); configuration.height = Int(window.frame.height * scale); configuration.showsCursor = false; configuration.ignoreShadowsSingleWindow = true
-            let cg = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
-            let bitmap = NSBitmapImageRep(cgImage: cg)
-            guard let data = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.65]) else { throw fail("Could not encode the selected window.") }
-            let path = ephemeral.appendingPathComponent(UUID().uuidString + ".jpg"); try data.write(to: path, options: [.atomic])
+            let path = try writeCapture(try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration))
             return ["windowId": id, "app": window.owningApplication?.applicationName ?? "Application", "title": window.title ?? "Window", "width": configuration.width, "height": configuration.height, "imagePath": path.path]
+        case "context.displays":
+            let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
+            return content.displays.map { ["id": Int($0.displayID), "x": $0.frame.minX, "y": $0.frame.minY, "width": $0.frame.width, "height": $0.frame.height] }
+        case "context.region":
+            guard let width = p["width"] as? Double, let height = p["height"] as? Double, width >= 16, height >= 16 else { throw fail("Draw a larger area to share.") }
+            let requested = CGRect(x: p["x"] as? Double ?? 0, y: p["y"] as? Double ?? 0, width: width, height: height)
+            let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
+            let centre = CGPoint(x: requested.midX, y: requested.midY)
+            guard let display = content.displays.first(where: { $0.frame.contains(centre) }) ?? content.displays.first(where: { $0.frame.intersects(requested) }) else { throw fail("That area is not on a connected display.") }
+            let excluded = Set(p["excludedApps"] as? [String] ?? [])
+            guard !content.windows.contains(where: { excluded.contains($0.owningApplication?.bundleIdentifier ?? "") && $0.frame.intersects(requested) }) else { throw fail("A protected application is inside that area. Choose another one.") }
+            let local = requested.intersection(display.frame).offsetBy(dx: -display.frame.minX, dy: -display.frame.minY)
+            guard local.width >= 16, local.height >= 16 else { throw fail("Draw a larger area to share.") }
+            let configuration = SCStreamConfiguration()
+            configuration.sourceRect = local
+            let scale = min(1, 1280 / local.width)
+            configuration.width = Int(local.width * scale); configuration.height = Int(local.height * scale); configuration.showsCursor = false
+            // Jarvis's own surfaces are excluded so the selection overlay never appears in the shot.
+            let filter = SCContentFilter(display: display, excludingWindows: content.windows.filter { isOwn($0) })
+            let path = try writeCapture(try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration))
+            return ["windowId": 0, "app": "Selected area", "title": "\(Int(local.width)) × \(Int(local.height)) points", "width": configuration.width, "height": configuration.height, "imagePath": path.path]
         case "context.focus":
             guard AXIsProcessTrusted(), let app = NSWorkspace.shared.frontmostApplication, app.bundleIdentifier != "personal.jarvis.desktop", app.localizedName != "Electron" else { return NSNull() }
             let element = AXUIElementCreateApplication(app.processIdentifier)
@@ -211,6 +279,35 @@ final class AudioHistory {
             var origin = CGPoint.zero; var dimensions = CGSize.zero
             guard AXValueGetValue(pos as! AXValue, .cgPoint, &origin), AXValueGetValue(size as! AXValue, .cgSize, &dimensions) else { return NSNull() }
             return ["x": origin.x, "y": origin.y, "width": dimensions.width, "height": dimensions.height, "bundleId": app.bundleIdentifier ?? ""]
+        case "ui.elements":
+            guard AXIsProcessTrusted() else { throw fail("Allow Accessibility for Jarvis in Privacy & access first.") }
+            let wanted = p["bundleId"] as? String
+            guard let app = NSWorkspace.shared.runningApplications.first(where: { wanted == nil ? $0.isActive : $0.bundleIdentifier == wanted }), app.bundleIdentifier != "personal.jarvis.desktop" else { throw fail("Choose a running application other than Jarvis.") }
+            var found: [[String: Any]] = []
+            axDescribe(AXUIElementCreateApplication(app.processIdentifier), path: [], depth: 0, into: &found, limit: min(p["limit"] as? Int ?? 200, 400))
+            return ["bundleId": app.bundleIdentifier ?? "", "app": app.localizedName ?? "Application", "frontmost": app.isActive, "elements": found]
+        case "ui.press":
+            guard AXIsProcessTrusted() else { throw fail("Allow Accessibility for Jarvis in Privacy & access first.") }
+            guard let bundleId = p["bundleId"] as? String, let path = p["path"] as? [Int], let role = p["role"] as? String, let label = p["label"] as? String else { throw fail("A control needs its application, path, role, and label.") }
+            guard bundleId != "personal.jarvis.desktop" else { throw fail("Jarvis does not press its own controls.") }
+            guard let app = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == bundleId }) else { throw fail("That application is no longer running.") }
+            // The path is re-walked every time; a control that moved is refused rather than guessed at.
+            var element = AXUIElementCreateApplication(app.processIdentifier)
+            for index in path {
+                let children = axChildren(element)
+                guard index >= 0, index < children.count else { throw fail("The control is no longer where it was. Look at the application again.") }
+                element = children[index]
+            }
+            guard (axString(element, kAXRoleAttribute as String) ?? "") == role, axLabel(element) == label else { throw fail("A different control is in that position now. Look at the application again.") }
+            guard (axValue(element, kAXEnabledAttribute as String) as? Bool) ?? true else { throw fail("That control is disabled.") }
+            guard axActions(element).contains(kAXPressAction as String) else { throw fail("That control cannot be pressed.") }
+            let frame = axFrame(element) ?? .zero
+            let target: [String: Any] = ["bundleId": bundleId, "app": app.localizedName ?? "Application", "role": role, "label": label, "frontmost": app.isActive, "x": frame.minX, "y": frame.minY, "width": frame.width, "height": frame.height]
+            if p["dryRun"] as? Bool == true { return target.merging(["pressed": false, "resolved": true]) { current, _ in current } }
+            guard app.isActive else { throw fail("Bring that application to the front before its control is pressed.") }
+            guard AXUIElementPerformAction(element, kAXPressAction as CFString) == .success else { throw fail("The application refused the press.") }
+            // Whatever the control reads as now is the only evidence the press did anything.
+            return target.merging(["pressed": true, "resolved": true, "labelAfter": axLabel(element)]) { current, _ in current }
         case "apple.calendars": return events.calendars(for: .event).map { ["id": $0.calendarIdentifier, "title": $0.title, "writable": $0.allowsContentModifications] }
         case "apple.reminder.lists": return events.calendars(for: .reminder).map { ["id": $0.calendarIdentifier, "title": $0.title, "writable": $0.allowsContentModifications, "isDefault": $0.calendarIdentifier == events.defaultCalendarForNewReminders()?.calendarIdentifier] }
         case "apple.event.get":

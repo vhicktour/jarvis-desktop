@@ -1,0 +1,256 @@
+{
+  "generatedAt": "2026-09-10T19:17:07.715Z",
+  "profile": "/private/tmp/jarvis-native-qa2",
+  "microphoneRouteTested": false,
+  "scope": "Each installed model runs the observable behaviour its role is relied on for, against the installed revision on this Mac. Results are recorded in each model manifest.",
+  "models": [
+    {
+      "id": "parakeet",
+      "role": "asr",
+      "revision": "ed2b7e8c15f9aaa0b5772e2efb986255eaef7e15",
+      "qualified": true,
+      "checks": [
+        {
+          "label": "Transcript",
+          "value": "Good evening, I am Jarvis, ready when you are.",
+          "passed": true
+        },
+        {
+          "label": "Recognition speed",
+          "value": "1.7× realtime",
+          "passed": true
+        }
+      ],
+      "elapsedSeconds": 9.585,
+      "detail": "Parakeet passed 2 checks on this Mac in 9.6 s.",
+      "name": "Parakeet",
+      "installed": true
+    },
+    {
+      "id": "kokoro",
+      "role": "tts",
+      "revision": "a71e4d38b236d968966a2002c4c895dbd12b1c3c",
+      "qualified": true,
+      "checks": [
+        {
+          "label": "Sample rate",
+          "value": "24000 Hz",
+          "passed": true
+        },
+        {
+          "label": "Spoken duration",
+          "value": "3.85 s",
+          "passed": true
+        },
+        {
+          "label": "Peak amplitude",
+          "value": "0.336",
+          "passed": true
+        },
+        {
+          "label": "Speech energy",
+          "value": "0.0577 RMS",
+          "passed": true
+        },
+        {
+          "label": "Finite samples",
+          "value": "92400 samples",
+          "passed": true
+        }
+      ],
+      "elapsedSeconds": 1.185,
+      "detail": "Kokoro passed 5 checks on this Mac in 1.2 s.",
+      "name": "Kokoro",
+      "installed": true
+    },
+    {
+      "id": "qwen",
+      "role": "reasoning",
+      "revision": "0e7ffd5c629ef7719d4cbc04069232580bfa9d9c",
+      "qualified": true,
+      "checks": [
+        {
+          "label": "Determinate answer",
+          "value": "4",
+          "passed": true
+        },
+        {
+          "label": "Task action envelope",
+          "value": "{\"action\":\"answer\",\"text\":\"Good evening!\"}",
+          "passed": true
+        }
+      ],
+      "elapsedSeconds": 6.346,
+      "detail": "Qwen 3.5 passed 2 checks on this Mac in 6.3 s.",
+      "name": "Qwen 3.5",
+      "installed": true
+    },
+    {
+      "id": "embedding",
+      "role": "embedding",
+      "revision": "6c3ae70858513f1a78e9cdca3cae330d9075cd2a",
+      "qualified": true,
+      "checks": [
+        {
+          "label": "Vectors returned",
+          "value": "3",
+          "passed": true
+        },
+        {
+          "label": "Dimensions",
+          "value": "1024",
+          "passed": true
+        },
+        {
+          "label": "Finite values",
+          "value": "all dimensions",
+          "passed": true
+        },
+        {
+          "label": "Related text ranks higher",
+          "value": "0.869 against 0.491",
+          "passed": true
+        }
+      ],
+      "elapsedSeconds": 0.879,
+      "detail": "Qwen Embedding passed 4 checks on this Mac in 0.9 s.",
+      "name": "Qwen Embedding",
+      "installed": true
+    },
+    {
+      "id": "whisper",
+      "role": "asr",
+      "revision": "45f3915923c7a79a5a5b5a7d909d39aeb0e5630e",
+      "qualified": true,
+      "checks": [
+        {
+          "label": "Transcript",
+          "value": "Good evening, I am Jarvis, ready when you are.",
+          "passed": true
+        },
+        {
+          "label": "Recognition speed",
+          "value": "6.9× realtime",
+          "passed": true
+        }
+      ],
+      "elapsedSeconds": 2.607,
+      "detail": "Whisper passed 2 checks on this Mac in 2.6 s.",
+      "name": "Whisper",
+      "installed": true
+    },
+    {
+      "id": "silero",
+      "role": "vad",
+      "revision": "e71cae966052b992a7eca6b17738916ce0eca4ec",
+      "qualified": true,
+      "checks": [
+        {
+          "label": "Speech recognized",
+          "value": "3 of 3",
+          "passed": true
+        },
+        {
+          "label": "Silence rejected",
+          "value": "3 of 3",
+          "passed": true
+        },
+        {
+          "label": "Unfinished speech still sounding",
+          "value": "3 of 3",
+          "passed": true
+        }
+      ],
+      "elapsedSeconds": 1.974,
+      "detail": "Silero VAD passed 3 checks on this Mac in 2.0 s.",
+      "name": "Silero VAD",
+      "installed": true
+    },
+    {
+      "id": "smart-turn",
+      "role": "turn",
+      "revision": "f766f81d3cfdf7737ac64aad813d91bbfd56bf93",
+      "qualified": false,
+      "checks": [
+        {
+          "label": "Probability in range",
+          "value": "0.403, 0.490, 0.214",
+          "passed": true
+        },
+        {
+          "label": "Silence never finishes a turn",
+          "value": "3 of 3",
+          "passed": true
+        },
+        {
+          "label": "Unfinished speech never finishes a turn",
+          "value": "3 of 3",
+          "passed": true
+        },
+        {
+          "label": "Every finished sentence reaches 0.65",
+          "value": "0.403, 0.490, 0.214 · lowest 0.214",
+          "passed": false
+        }
+      ],
+      "elapsedSeconds": 0.977,
+      "detail": "Smart Turn is not qualified on this Mac: Every finished sentence reaches 0.65 — 0.403, 0.490, 0.214 · lowest 0.214",
+      "name": "Smart Turn",
+      "installed": true
+    },
+    {
+      "id": "lfm",
+      "name": "LFM Audio",
+      "role": "duplex",
+      "revision": "",
+      "installed": false,
+      "qualified": false,
+      "checks": [],
+      "elapsedSeconds": 0,
+      "detail": "Research profile. Installation is refused until a qualified Mac adapter exists."
+    },
+    {
+      "id": "nemotron",
+      "name": "Nemotron VoiceChat",
+      "role": "duplex",
+      "revision": "",
+      "installed": false,
+      "qualified": false,
+      "checks": [],
+      "elapsedSeconds": 0,
+      "detail": "Research profile. Installation is refused until a qualified Mac adapter exists."
+    },
+    {
+      "id": "minicpm",
+      "name": "MiniCPM-o",
+      "role": "duplex",
+      "revision": "",
+      "installed": false,
+      "qualified": false,
+      "checks": [],
+      "elapsedSeconds": 0,
+      "detail": "Research profile. Installation is refused until a qualified Mac adapter exists."
+    },
+    {
+      "id": "ui-tars",
+      "name": "UI-TARS",
+      "role": "vision",
+      "revision": "",
+      "installed": false,
+      "qualified": false,
+      "checks": [],
+      "elapsedSeconds": 0,
+      "detail": "Research profile. Installation is refused until a qualified Mac adapter exists."
+    }
+  ],
+  "memory": {
+    "version": 1,
+    "mlx": true,
+    "memory": 328194682,
+    "peakMemory": 3267683644
+  },
+  "elapsedSeconds": 23.759282707999997,
+  "installed": 7,
+  "qualified": 6,
+  "passed": false
+}

@@ -141,6 +141,28 @@ export const Observation = z.object({
   following: z.boolean().default(false),
 })
 export type Observation = z.infer<typeof Observation>
+/** A connected note vault is indexed for recall; the notes themselves stay in their folder. */
+export type VaultStatus = {
+  path?: string
+  scope: string
+  notes: number
+  chunks: number
+  embedded: number
+  bytes: number
+  skipped: number
+  redacted: number
+  syncing: boolean
+  stage?: string
+  lastSyncedAt?: string
+  error?: string
+}
+export type VaultExcerpt = {
+  id: string
+  path: string
+  title: string
+  heading: string
+  text: string
+}
 export const AdapterCapabilities = z.object({
   liveSteering: z.boolean(),
   resume: z.boolean(),
@@ -271,6 +293,17 @@ export type ModelRecord = {
   qualified: boolean
   license: string
 }
+/** What a model check observed on this Mac. Every entry is a result, never a prediction. */
+export type QualificationCheck = { label: string; value: string; passed: boolean }
+export type QualificationResult = {
+  id: string
+  role: ModelRole
+  revision: string
+  qualified: boolean
+  checks: QualificationCheck[]
+  elapsedSeconds: number
+  detail: string
+}
 export type WindowChoice = { id: number; app: string; title: string; bundleId: string }
 export type Diagnostics = {
   platform: string
@@ -307,6 +340,7 @@ export type AppSnapshot = {
   activeProjectId?: string
   selectedTaskId?: string
   observation?: Observation
+  vault: VaultStatus
   connections: Connection[]
   models: ModelRecord[]
   permissions: Permissions
@@ -409,6 +443,19 @@ export const Command = z.discriminatedUnion('type', [
   z.object({ type: z.literal('context.select'), windowId: z.number().int().positive() }),
   z.object({ type: z.literal('context.follow'), following: z.boolean() }),
   z.object({ type: z.literal('context.clear') }),
+  z.object({ type: z.literal('context.selectRegion') }),
+  z.object({ type: z.literal('context.cancelRegion') }),
+  // Reported in the selection window's own coordinates; the main process maps them to the screen.
+  z.object({
+    type: z.literal('context.regionChosen'),
+    x: z.number().finite().nonnegative(),
+    y: z.number().finite().nonnegative(),
+    width: z.number().finite().min(1).max(20_000),
+    height: z.number().finite().min(1).max(20_000),
+  }),
+  z.object({ type: z.literal('vault.choose') }),
+  z.object({ type: z.literal('vault.sync') }),
+  z.object({ type: z.literal('vault.forget') }),
   z.object({
     type: z.literal('permission.request'),
     permission: z.enum(['microphone', 'screen', 'accessibility', 'calendars', 'reminders']),

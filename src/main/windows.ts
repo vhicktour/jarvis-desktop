@@ -33,6 +33,7 @@ export class WindowCoordinator {
   orb: BrowserWindow
   panel: BrowserWindow
   settings?: BrowserWindow
+  selections: BrowserWindow[] = []
   form: OverlayForm = 'orb'
   glass = false
   private preferences?: Settings
@@ -79,10 +80,11 @@ export class WindowCoordinator {
     this.clickTimer.unref()
   }
   private make(
-    surface: 'orb' | 'panel' | 'settings',
+    surface: 'orb' | 'panel' | 'settings' | 'region',
     width: number,
     height: number,
     radius: number,
+    glassy = true,
   ) {
     const overlay = surface !== 'settings'
     const window = new BrowserWindow({
@@ -91,7 +93,7 @@ export class WindowCoordinator {
       minWidth: overlay ? undefined : 800,
       minHeight: overlay ? undefined : 600,
       title: surface === 'settings' ? 'Jarvis Settings' : 'Jarvis',
-      type: overlay ? 'panel' : undefined,
+      type: overlay && surface !== 'region' ? 'panel' : undefined,
       frame: !overlay,
       titleBarStyle: overlay ? undefined : 'hiddenInset',
       transparent: true,
@@ -128,6 +130,8 @@ export class WindowCoordinator {
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
     window.webContents.on('will-navigate', (event) => event.preventDefault())
     window.webContents.once('did-finish-load', () => {
+      // A region selector must show the real desktop, so no material is layered over it.
+      if (!glassy) return window.webContents.invalidate()
       try {
         const id = glass.addView(window.getNativeWindowHandle(), {
           cornerRadius: radius,
@@ -153,6 +157,11 @@ export class WindowCoordinator {
     if (!window) return
     window.webContents.invalidate()
     if (window === this.orb) window.showInactive()
+    // Drawing a region is explicit interaction, so its window may take the keyboard.
+    if (this.selections.includes(window)) {
+      window.show()
+      window.focus()
+    }
     if (window === this.settings) {
       window.webContents.send('jarvis:event', { type: 'section', section: this.settingsSection })
       window.setOpacity(0)
@@ -165,9 +174,30 @@ export class WindowCoordinator {
     }
   }
   all() {
-    return [this.orb, this.panel, this.settings].filter(
+    return [this.orb, this.panel, this.settings, ...this.selections].filter(
       (w): w is BrowserWindow => !!w && !w.isDestroyed(),
     )
+  }
+  /** One selector per display, so a region can be drawn on whichever screen holds it. */
+  openSelection() {
+    this.closeSelection()
+    this.setForm('orb')
+    app.focus({ steal: true })
+    for (const display of screen.getAllDisplays()) {
+      const window = this.make('region', display.bounds.width, display.bounds.height, 0, false)
+      window.setBounds(display.bounds)
+      window.setAlwaysOnTop(true, 'screen-saver')
+      window.on('closed', () => {
+        this.selections = this.selections.filter((item) => item !== window)
+      })
+      this.selections.push(window)
+    }
+  }
+  closeSelection() {
+    for (const window of this.selections.splice(0)) if (!window.isDestroyed()) window.destroy()
+  }
+  selectionBounds(contents: Electron.WebContents) {
+    return this.selections.find((window) => window.webContents === contents)?.getBounds()
   }
   broadcast(event: AppEvent) {
     for (const window of this.all()) window.webContents.send('jarvis:event', event)
@@ -326,6 +356,7 @@ export class WindowCoordinator {
   }
   destroy() {
     clearInterval(this.clickTimer)
+    this.closeSelection()
     for (const window of this.all()) window.destroy()
   }
 }

@@ -10,7 +10,7 @@ pnpm native:build
 pnpm dev
 ```
 
-`Command–Shift–J` opens voice interaction. The floating orb is the main interface; its menu opens Settings or compact task/conversation panels. Provider connections, projects, local models, and privacy settings are managed in the Settings window.
+`Command–Shift–J` opens voice interaction. The floating orb is the main interface; its menu opens Settings or compact task/conversation panels. Provider connections, projects, local models, a notes folder to recall from, and privacy settings are managed in the Settings window.
 
 ## Checks and packaging
 

@@ -194,9 +194,9 @@ export class ProviderHub {
       'Choose a repository and approve its scope before starting this task.',
     )
     const apiKey = await this.host<string | null>('credential.get', { account: 'claude-api' })
-    invariant(apiKey, 'Connect Claude before starting the independent review workflow.')
     invariant(task.budget.maxCostUsd, 'Configure a usage ceiling before starting.')
     if (task.provider === 'claude') {
+      invariant(apiKey, 'Connect Claude before starting the independent review workflow.')
       run.stage('Preparing a fixed, read-only review package')
       const baseline = await git(project.path, ['rev-parse', 'HEAD'])
       const pkg = await reviewPackage(project.path, baseline)
@@ -232,8 +232,10 @@ export class ProviderHub {
           checks: project.checks,
           networkAccess: false,
           originalCheckout: 'Preserved. Uncommitted changes are not copied.',
-          reviewDestination: 'Anthropic API',
-          maximumReviewCostUsd: task.budget.maxCostUsd,
+          reviewDestination: apiKey
+            ? 'Anthropic API'
+            : 'No independent review; Claude is not connected',
+          maximumReviewCostUsd: apiKey ? task.budget.maxCostUsd : 0,
         },
         worktree,
         repositoryState,
@@ -261,8 +263,10 @@ export class ProviderHub {
         baseline,
         networkAccess: false,
         provider: 'Codex / ChatGPT',
-        reviewDestination: 'Anthropic API',
-        maximumReviewCostUsd: task.budget.maxCostUsd,
+        reviewDestination: apiKey
+          ? 'Anthropic API'
+          : 'No independent review; Claude is not connected',
+        maximumReviewCostUsd: apiKey ? task.budget.maxCostUsd : 0,
       },
       worktree,
       implementationState,
@@ -289,19 +293,22 @@ export class ProviderHub {
       hash: pkg.revision,
       verified: true,
     })
-    run.stage('Claude is reviewing the fixed revision')
-    const review = await this.review(task, worktree, pkg, apiKey, run)
-    invariant(
-      (await fingerprint(worktree)) === pkg.revision,
-      'The worktree changed during review. Review evidence is no longer current.',
-    )
-    run.evidence({
-      kind: 'review',
-      label: 'Independent Claude review',
-      value: review.text,
-      hash: pkg.revision,
-      verified: true,
-    })
+    // Without a reviewer the work still runs, and the receipt says plainly that none was asked.
+    if (apiKey) {
+      run.stage('Claude is reviewing the fixed revision')
+      const review = await this.review(task, worktree, pkg, apiKey, run)
+      invariant(
+        (await fingerprint(worktree)) === pkg.revision,
+        'The worktree changed during review. Review evidence is no longer current.',
+      )
+      run.evidence({
+        kind: 'review',
+        label: 'Independent Claude review',
+        value: review.text,
+        hash: pkg.revision,
+        verified: true,
+      })
+    }
     invariant(
       project.checks.length > 0,
       'Configure a verification command for this repository. Completion requires a scoped check.',
@@ -342,7 +349,9 @@ export class ProviderHub {
       summary: 'Implementation, independent review, and configured checks are ready.',
       limitations: [
         'Changes remain in the isolated worktree. Nothing was committed, merged, or published.',
-        'Claude findings require your review; passing checks do not prove all behavior.',
+        apiKey
+          ? 'Claude findings require your review; passing checks do not prove all behavior.'
+          : 'No independent review was performed: Claude is not connected. Only the configured checks were run.',
         'Codex uses your ChatGPT plan. Its usage is not represented as an API dollar cost.',
         implementation,
       ].filter(Boolean),

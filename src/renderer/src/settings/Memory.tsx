@@ -2,16 +2,114 @@ import { useState } from 'react'
 import {
   BrainCircuit,
   Check,
+  FolderOpen,
   LockKeyhole,
   MoreHorizontal,
   Plus,
+  RefreshCw,
   Search,
   Trash2,
   X,
 } from 'lucide-react'
 import type { MemoryRecord } from '../../../shared/contracts'
 import { useJarvis } from '../state'
-import { Button, Choice, Confirm, Empty, Field, IconButton } from '../ui'
+import { Button, Choice, Confirm, Empty, Field, Group, IconButton, Row } from '../ui'
+
+function Notes() {
+  const { snapshot, command } = useJarvis()
+  const vault = snapshot.vault
+  const synced = vault.lastSyncedAt
+    ? new Date(vault.lastSyncedAt).toLocaleString([], {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      })
+    : 'Not yet read'
+  return (
+    <Group
+      title="Your notes"
+      detail="Choose a folder of Markdown notes. Jarvis indexes what is inside for recall; the files stay where they are."
+    >
+      {vault.path ? (
+        <>
+          <Row title="Notes folder" description={vault.path}>
+            <Button
+              busy={vault.syncing}
+              onPress={() => {
+                void command({ type: 'vault.sync' })
+              }}
+            >
+              {vault.syncing ? (vault.stage ?? 'Reading') : 'Read again'}
+              {!vault.syncing && <RefreshCw size={13} />}
+            </Button>
+          </Row>
+          <Row title="Indexed" description={`Last read ${synced}`}>
+            <span className="diagnostic-value">
+              {vault.notes} notes · {vault.chunks} passages
+            </span>
+          </Row>
+          <Row
+            title="Ready for meaning"
+            description={
+              vault.embedded === vault.chunks
+                ? 'Every passage can be found by meaning as well as by word.'
+                : 'Install Qwen Embedding in Local models to find notes by meaning.'
+            }
+          >
+            <span className="diagnostic-value">
+              {vault.embedded} of {vault.chunks}
+            </span>
+          </Row>
+          {vault.redacted > 0 && (
+            <Row
+              title="Passages left out"
+              description="These read like credentials, so they never reach a model."
+            >
+              <span className="diagnostic-value">{vault.redacted}</span>
+            </Row>
+          )}
+          {vault.skipped > 0 && (
+            <Row
+              title="Files skipped"
+              description="Too large, unreadable, or past the folder limit."
+            >
+              <span className="diagnostic-value">{vault.skipped}</span>
+            </Row>
+          )}
+          {vault.error && <p className="error-text">{vault.error}</p>}
+          <div className="actions">
+            <Confirm
+              trigger={<Button variant="ghost">Forget these notes</Button>}
+              title="Forget the indexed notes?"
+              description="Jarvis removes its index and its embeddings. Your notes stay in their folder, untouched."
+              action="Forget the index"
+              destructive
+              onConfirm={() => {
+                void command({ type: 'vault.forget' })
+              }}
+            />
+          </div>
+        </>
+      ) : (
+        <Row
+          title="No notes folder yet"
+          description="An Obsidian vault works as it is. Notes join recall in your personal scope."
+        >
+          <Button
+            variant="primary"
+            onPress={() => {
+              void command({ type: 'vault.choose' })
+            }}
+          >
+            <FolderOpen size={14} />
+            Choose folder
+          </Button>
+        </Row>
+      )}
+    </Group>
+  )
+}
 
 export function Memory() {
   const { snapshot, command } = useJarvis()
@@ -156,11 +254,12 @@ export function Memory() {
           }
         />
       )}
+      <Notes />
       <div className="inline-note">
         <LockKeyhole size={15} />
         <p>
-          Memories are encrypted on this Mac. Inferred memories need your review before they enter
-          recall.
+          Memories and note excerpts are encrypted on this Mac. Inferred memories need your review
+          before they enter recall, and note text is treated as reference, never as instructions.
         </p>
       </div>
     </>

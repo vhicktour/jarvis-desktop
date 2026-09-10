@@ -1,20 +1,20 @@
 {
-  "generatedAt": "2026-09-10T17:20:52.039Z",
+  "generatedAt": "2026-09-10T19:14:06.526Z",
   "kind": "synthesized-audio-fixture",
   "microphoneRouteTested": false,
   "input": "Create a file named receipt.txt containing exactly: A quietly capable companion.",
   "transcript": "Create a file named receipt TXT containing exactly a quietly capable companion.",
-  "elapsedSeconds": 23.203990458,
+  "elapsedSeconds": 11.361178791,
   "task": {
-    "id": "87667ef5-bbc2-4291-979c-36d82ba95f94",
+    "id": "d69e4a63-4e84-46e8-a41c-6e4567d7b8c1",
     "revision": 1,
     "objective": "Create a file named receipt TXT containing exactly a quietly capable companion.",
     "state": "completed",
     "provider": "local",
     "stage": "Created receipt.txt and checked its contents.",
     "scope": "fixture",
-    "createdAt": "2026-09-10T17:20:44.377Z",
-    "updatedAt": "2026-09-10T17:20:51.946Z",
+    "createdAt": "2026-09-10T19:14:02.373Z",
+    "updatedAt": "2026-09-10T19:14:06.449Z",
     "budget": {
       "maxSteps": 30,
       "timeoutMs": 1200000,
@@ -23,7 +23,7 @@
     "providerIds": {},
     "evidence": [
       {
-        "id": "2c5331f7-e546-446b-a1ba-4edaeb694cce",
+        "id": "ee3dadb2-84ba-4ffd-babd-304a30e0ea49",
         "kind": "file",
         "label": "Verified receipt.txt",
         "value": "a quietly capable companion.",
@@ -40,16 +40,16 @@
     "costUsd": null
   },
   "receipt": {
-    "id": "3abef99a-341b-459d-8d2c-e44e0329f8a9",
-    "taskId": "87667ef5-bbc2-4291-979c-36d82ba95f94",
+    "id": "07b0e555-bcb9-4c00-b87f-e37669f97a05",
+    "taskId": "d69e4a63-4e84-46e8-a41c-6e4567d7b8c1",
     "revision": 1,
     "status": "completed",
     "objective": "Create a file named receipt TXT containing exactly a quietly capable companion.",
     "provider": "local",
-    "createdAt": "2026-09-10T17:20:51.947Z",
+    "createdAt": "2026-09-10T19:14:06.450Z",
     "evidence": [
       {
-        "id": "2c5331f7-e546-446b-a1ba-4edaeb694cce",
+        "id": "ee3dadb2-84ba-4ffd-babd-304a30e0ea49",
         "kind": "file",
         "label": "Verified receipt.txt",
         "value": "a quietly capable companion.",
@@ -67,7 +67,7 @@
   },
   "files": [
     {
-      "id": "2c5331f7-e546-446b-a1ba-4edaeb694cce",
+      "id": "ee3dadb2-84ba-4ffd-babd-304a30e0ea49",
       "kind": "file",
       "label": "Verified receipt.txt",
       "value": "a quietly capable companion.",

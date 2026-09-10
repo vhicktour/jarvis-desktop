@@ -105,7 +105,7 @@ export function Voice() {
         </p>
         <Toggle
           label="Finish a turn naturally"
-          description="Experimental: Silero and Smart Turn check a pause after you activate the microphone. Click the orb to finish at any time."
+          description="Experimental: Silero and Smart Turn check a pause after you activate the microphone. Both need to pass their checks in Local models first. Click the orb to finish at any time."
           selected={snapshot.settings.automaticEndpointing}
           onChange={(automaticEndpointing) => {
             void command({ type: 'settings.update', patch: { automaticEndpointing } })

@@ -4,7 +4,7 @@ import { useJarvis } from '../state'
 import { Badge, Button, Confirm, Group, IconButton, Row } from '../ui'
 
 function ModelRow({ model }: { model: ModelRecord }) {
-  const { command, busy } = useJarvis()
+  const { command } = useJarvis()
   return (
     <div className="model-row">
       <div className={`model-symbol ${model.role}`}>

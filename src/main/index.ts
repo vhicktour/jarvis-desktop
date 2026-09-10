@@ -344,6 +344,48 @@ function installCommands() {
         app.quit()
         return { ok: true, value: true }
       }
+      if (command.type === 'context.selectRegion') {
+        if (snapshot.permissions.screen !== 'granted')
+          throw new Error('Allow Screen Recording in Privacy & access before sharing an area.')
+        windows.openSelection()
+        return { ok: true, value: true }
+      }
+      if (command.type === 'context.cancelRegion') {
+        windows.closeSelection()
+        return { ok: true, value: true }
+      }
+      if (command.type === 'context.regionChosen') {
+        const bounds = windows.selectionBounds(event.sender)
+        if (!bounds) throw new Error('This selection is no longer active.')
+        // Close first so the scrim is gone, then capture; the helper also excludes our windows.
+        windows.closeSelection()
+        try {
+          await service({
+            type: 'context.regionSelected',
+            x: bounds.x + command.x,
+            y: bounds.y + command.y,
+            width: command.width,
+            height: command.height,
+          })
+          windows.setForm('context', false)
+        } catch (error) {
+          // The window that asked is gone, so the answer has to reach the remaining surfaces.
+          emit({ type: 'notice', tone: 'error', message: safeError(error) })
+        }
+        return { ok: true, value: true }
+      }
+      if (command.type === 'vault.choose') {
+        const result = await dialog.showOpenDialog({
+          title: 'Choose the folder that holds your notes',
+          message: 'Jarvis indexes the Markdown notes inside it. The files stay where they are.',
+          properties: ['openDirectory'],
+        })
+        if (result.canceled || !result.filePaths[0]) return { ok: true, value: null }
+        return {
+          ok: true,
+          value: await service({ type: 'vault.selected', path: result.filePaths[0] }),
+        }
+      }
       if (command.type === 'project.add') {
         const result = await dialog.showOpenDialog({
           title: 'Choose a repository for Jarvis',

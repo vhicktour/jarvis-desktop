@@ -1697,3 +1697,60 @@ html[data-reduce-motion='true'] *::after {
 .receipt-notes li {
   margin-top: 8px;
 }
+
+/* Region selection: the desktop must stay readable through it, so no glass is layered here. */
+.region-shell {
+  position: fixed;
+  inset: 0;
+  cursor: crosshair;
+  outline: none;
+  --region-dim: color-mix(in srgb, var(--color-ink) 42%, transparent);
+}
+[data-opaque='true'] .region-shell {
+  --region-dim: color-mix(in srgb, var(--color-ink) 82%, transparent);
+}
+.region-veil {
+  position: absolute;
+  inset: 0;
+  background: var(--region-dim);
+}
+.region-rect {
+  position: absolute;
+  border: 1px solid var(--color-cyan);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--color-cyan) 7%, transparent);
+  box-shadow: 0 0 0 100vmax var(--region-dim);
+}
+.region-hint {
+  position: absolute;
+  left: 50%;
+  bottom: var(--space-section);
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--space-section);
+  max-width: min(720px, calc(100vw - var(--space-section) * 2));
+  padding: calc(var(--space-unit) * 4) var(--space-inset);
+  border-radius: var(--radius-control);
+  border: 1px solid color-mix(in srgb, var(--color-pearl) 12%, transparent);
+  background: color-mix(in srgb, var(--color-ink) 92%, transparent);
+  box-shadow: 0 18px 48px rgb(0 0 0 / 45%);
+  cursor: default;
+}
+.region-hint-text {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space-unit) * 1);
+}
+.region-hint-text p {
+  margin: 0;
+  max-width: 44ch;
+  color: var(--color-pearl);
+}
+.region-hint .actions {
+  margin: 0;
+  flex: none;
+}
+.region-shell:focus-visible .region-hint {
+  border-color: color-mix(in srgb, var(--color-cyan) 55%, transparent);
+}

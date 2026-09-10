@@ -50,15 +50,15 @@ Sora appears in identity and headings. System text carries conversation and cont
 
 ## Layout
 
-The 72px core docks 24px inside the display work area and is the primary interface. Listening, thinking, searching, and working remain orb states; they never automatically open a workspace or conversation window. A small hover/context menu exposes Settings, text input, task details, and voice controls. Explicitly opened details and required approvals use anchored panels that grow inward. Settings alone opens a full, resizable window with a 192px navigation rail. Expanded surfaces use 24px padding and a 4px spacing rhythm. Text input and approval actions stay reachable in short windows. Long content scrolls inside its owner.
+The 72px core docks 24px inside the display work area and is the primary interface. Listening, thinking, searching, and working remain orb states; they never automatically open a workspace or conversation window. A small hover/context menu exposes Settings, text input, task details, and voice controls. Explicitly opened details and required approvals use anchored panels that grow inward. Settings alone opens a full, resizable window with a 192px navigation rail. Expanded surfaces use 24px padding and a 4px spacing rhythm. Text input and approval actions stay reachable in short windows. Long content scrolls inside its owner. Choosing an area of the screen dims each display for as long as someone is drawing on it, and closes the moment an area is shared or the selection is cancelled.
 
 ## Elevation & Depth
 
-One native glass layer sits behind each Electron surface. Thin luminous edges and restrained shadows articulate the silhouette. Interior controls use quiet tonal separation. Borders and glow never compete with body text. Browser development previews label their simulated desktop and glass explicitly.
+One native glass layer sits behind each Electron surface, except the screen-area selector, which must not tint the very thing it is about to capture. Thin luminous edges and restrained shadows articulate the silhouette. Interior controls use quiet tonal separation. Borders and glow never compete with body text. Browser development previews label their simulated desktop and glass explicitly.
 
 ## Shapes
 
-The core is circular, the listening surface is a capsule, and reading panels have 28px corners. Controls use 12px corners. Dragging moves the window; it does not distort words or hit targets.
+The core is circular, the listening surface is a capsule, and reading panels have 28px corners. Controls use 12px corners. A drawn screen area keeps a hairline cyan edge and square corners, so it reads as a measurement rather than a card. Dragging moves the window; it does not distort words or hit targets.
 
 ## Components
 

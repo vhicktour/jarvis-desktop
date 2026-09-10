@@ -7,14 +7,16 @@ import { AppState, useJarvis } from './state'
 import { Orb } from './Orb'
 import { Panel } from './Panels'
 import { Settings } from './Settings'
+import { RegionSelect } from './RegionSelect'
 import { previewAPI } from './preview'
-import { Notices } from './ui'
 
 if (!window.jarvis && import.meta.env.DEV) window.jarvis = previewAPI()
 const surface = new URLSearchParams(location.search).get('surface') ?? 'orb'
 function Preview() {
   const [settings, setSettings] = useState(false)
   const [panel, setPanel] = useState(false)
+  const [region, setRegion] = useState(false)
+  const [chosen, setChosen] = useState<string>()
   const { form } = useJarvis()
   useEffect(
     () =>
@@ -25,8 +27,22 @@ function Preview() {
   )
   useEffect(() => {
     const show = () => setSettings(true)
+    const open = () => setRegion(true)
+    const close = (event: Event) => {
+      setRegion(false)
+      const detail = (event as CustomEvent).detail
+      setChosen(
+        detail ? `${detail.width} x ${detail.height} at ${detail.x}, ${detail.y}` : 'cancelled',
+      )
+    }
     window.addEventListener('preview:settings', show)
-    return () => window.removeEventListener('preview:settings', show)
+    window.addEventListener('preview:region', open)
+    window.addEventListener('preview:region-closed', close)
+    return () => {
+      window.removeEventListener('preview:settings', show)
+      window.removeEventListener('preview:region', open)
+      window.removeEventListener('preview:region-closed', close)
+    }
   }, [])
   return (
     <div className="preview-stage">
@@ -52,9 +68,12 @@ function Preview() {
       <div className="preview-orb">
         <Orb />
       </div>
+      {region && <RegionSelect />}
       <div className="preview-bar">
         <span>DEVELOPMENT SCENARIO · SIMULATED STATE</span>
+        {chosen && <span data-testid="preview-region-result">Area: {chosen}</span>}
         <button onClick={() => setSettings(!settings)}>{settings ? 'Orb only' : 'Settings'}</button>
+        <button onClick={() => setRegion(true)}>Share an area</button>
       </div>
     </div>
   )
@@ -86,6 +105,8 @@ createRoot(document.getElementById('root')!).render(
           <Preview />
         ) : surface === 'settings' ? (
           <Settings />
+        ) : surface === 'region' ? (
+          <RegionSelect />
         ) : surface === 'panel' ? (
           <Panel />
         ) : (

@@ -1,0 +1,29 @@
+{
+  "generatedAt": "2026-09-10T19:46:47.062Z",
+  "scope": "personal",
+  "scope_note": "Indexed into a disposable ledger. Note titles and excerpts are written to verification/private only.",
+  "indexSeconds": 211.2,
+  "notes": 145,
+  "chunks": 1179,
+  "embedded": 1179,
+  "bytes": 1499758,
+  "redactedCredentialPassages": 6,
+  "skippedFiles": 0,
+  "recall": [
+    {
+      "query": "what did we decide about the orb overlay",
+      "elapsedMs": 49.7,
+      "hits": 4
+    },
+    {
+      "query": "how should I host a personal site",
+      "elapsedMs": 76,
+      "hits": 4
+    }
+  ],
+  "afterForget": {
+    "notes": 0,
+    "hits": 0
+  },
+  "passed": true
+}
