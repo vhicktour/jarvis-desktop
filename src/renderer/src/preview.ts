@@ -8,12 +8,17 @@ export function previewAPI(): JarvisAPI {
   snapshot.diagnostics.chip = 'Apple M1 Pro'
   snapshot.diagnostics.memoryGB = 16
   // The design surface shows the states a qualified Mac reaches; only the application judges one.
-  for (const model of snapshot.models)
+  // A runtime that is down cannot hold installed, qualified models, so it comes up here as well.
+  snapshot.diagnostics.modelRuntime = true
+  for (const model of snapshot.models) {
+    // Every role the worker can load, which on a qualified Mac is all but the duplex research.
+    model.installable = model.role !== 'duplex'
     if (!model.experimental) {
       model.status = 'installed'
       model.revision = 'preview'
       model.qualified = true
     }
+  }
   const listeners = new Set<(event: AppEvent) => void>()
   const emit = (event: AppEvent) => listeners.forEach((listener) => listener(event))
   let meter: ReturnType<typeof setInterval> | undefined
