@@ -1,5 +1,6 @@
 appId: personal.jarvis.desktop
 afterPack: scripts/verify-bundle.cjs
+afterSign: scripts/verify-signature.cjs
 productName: Jarvis
 directories:
   output: dist
