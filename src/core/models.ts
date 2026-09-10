@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { appendFileSync, existsSync, readFileSync, statSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { JsonProcess } from './process'
 import { MODELS } from '../shared/defaults'
@@ -11,6 +11,8 @@ export class Models {
   private qualifying = new Set<string>()
   /** Why the runtime is not up, when it is not. Without this the interface can only shrug. */
   failure?: string
+  /** How long first contact may take before the worker is asked again. Cold bundles are slow. */
+  patience = 60_000
   private stopping = false
   private diagnostics: string[] = []
   // The worker is the authority on which roles it can load; the interface only reflects it.
@@ -48,6 +50,7 @@ export class Models {
         },
       },
     ))
+    this.log(`Starting the model runtime (pid ${worker.child.pid ?? 'unknown'}).`)
     this.process.on('message', (message) => this.message(message))
     // Python reports why it could not start on stderr; keep the last of it to explain a failure.
     worker.on('diagnostic', (line: string) => {
@@ -59,6 +62,9 @@ export class Models {
     worker.on('exit', (code: number | null, signal: string | null) => {
       if (this.process !== worker) return
       this.process = undefined
+      this.log(
+        `The runtime process ended (${signal ?? `exit ${code ?? 'unknown'}`})${this.stopping ? ', because Jarvis asked it to' : ', unasked'}.`,
+      )
       if (!this.stopping)
         this.failure = this.explain(
           `The local model runtime stopped on its own (${signal ?? `exit ${code ?? 'unknown'}`}). Open Settings → Local models to start it again.`,
@@ -66,11 +72,14 @@ export class Models {
       this.changed()
     })
     try {
-      const info = await worker.request('ping', {}, 60_000)
+      const began = Date.now()
+      const info = await this.greet(worker)
+      this.log(`The runtime answered in ${((Date.now() - began) / 1000).toFixed(2)} s.`)
       this.runnable = Array.isArray(info?.roles) ? info.roles : []
       this.failure = undefined
       await this.refresh()
     } catch (error) {
+      this.log(`Giving up on the runtime: ${safeError(error)}`)
       worker.stop()
       if (this.process === worker) this.process = undefined
       this.failure = this.explain(safeError(error))
@@ -78,6 +87,35 @@ export class Models {
       throw error
     }
     return true
+  }
+  /**
+   * First contact can be slow. A freshly installed bundle pays for signature validation on every
+   * page it imports, which measured 13.8 s against 0.15 s once warm, and a machine under load pays
+   * more. Being slow to answer is not a reason to kill a worker that is still coming up, so a
+   * living worker is asked a second time before the runtime is given up on.
+   */
+  private async greet(worker: JsonProcess) {
+    try {
+      return await worker.request('ping', {}, this.patience)
+    } catch (error) {
+      if (worker.child.exitCode !== null || worker.child.signalCode !== null) throw error
+      this.log(`First ping went unanswered (${safeError(error)}); asking once more.`)
+      return await worker.request('ping', {}, this.patience)
+    }
+  }
+  /**
+   * A packaged application that loses its runtime cannot be watched live, so the lifecycle is
+   * written down. Bounded, because a log that fills the disk is its own failure.
+   */
+  private log(line: string) {
+    try {
+      const file = join(this.dataDir, 'runtime.log')
+      if ((statSync(file, { throwIfNoEntry: false })?.size ?? 0) > 64_000)
+        writeFileSync(file, '', { mode: 0o600 })
+      appendFileSync(file, `${new Date().toISOString()} ${line}\n`, { mode: 0o600 })
+    } catch {
+      /* Diagnostics must never be the reason the runtime cannot start. */
+    }
   }
   private explain(reason: string) {
     return [reason, ...this.diagnostics].join(' · ').slice(0, 600)

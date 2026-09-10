@@ -1020,6 +1020,47 @@ test('a runtime that answers and then leaves quietly is reported, not treated as
   rmSync(dir, { recursive: true, force: true })
 })
 
+test('a runtime that is slow to answer is asked again, not killed for being slow', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'jarvis-slow-'))
+  const workers = join(dir, 'workers')
+  mkdirSync(workers)
+  writeFileSync(
+    join(workers, 'runtime.json'),
+    JSON.stringify({ version: 1, python: 'interpreter' }),
+  )
+  // Ignores the first request outright, the way a cold worker still importing would, then answers.
+  writeFileSync(
+    join(workers, 'interpreter'),
+    [
+      '#!/bin/sh',
+      'first=1',
+      'while read -r line; do',
+      '  case "$line" in *\'"id":\'*) ;; *) continue ;; esac',
+      '  if [ $first = 1 ]; then first=0; continue; fi',
+      '  id=$(printf "%s" "$line" | sed -n \'s/.*"id":"\\([^"]*\\)".*/\\1/p\')',
+      '  printf \'{"version":1,"id":"%s","result":{"version":1,"roles":["asr"]}}\\n\' "$id"',
+      'done',
+    ].join('\n') + '\n',
+    { mode: 0o755 },
+  )
+  writeFileSync(join(workers, 'models.py'), '')
+  const models = new Models(
+    dir,
+    workers,
+    () => {},
+    () => {},
+  )
+  models.patience = 400
+  assert.equal(await models.start(), true, 'a worker that answered the second ping was given up on')
+  assert.equal(models.failure, undefined, 'being slow was reported as a failure')
+  assert.ok(models.process, 'a living worker was killed for being slow to answer')
+  const log = readFileSync(join(dir, 'runtime.log'), 'utf8')
+  assert.match(log, /First ping went unanswered/, 'the retry left no record to read back')
+  assert.match(log, /The runtime answered in /, 'first contact was not timed in the log')
+  models.stop()
+  rmSync(dir, { recursive: true, force: true })
+})
+
 test('a runtime killed outright is named by its signal, not by an exit code it never had', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'jarvis-killed-'))
   const workers = join(dir, 'workers')
