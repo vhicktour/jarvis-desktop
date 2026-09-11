@@ -1092,6 +1092,30 @@ test('an engine that is not ready falls back to local, never to the cloud', () =
   )
 })
 
+test('a microphone the name opened is closed by silence, not by waiting for a hand', () => {
+  const turn = (over: Partial<ListeningTurn>): ListeningTurn => ({
+    elapsed: 10,
+    lastSpeechAt: 0,
+    lastEndpointAt: 0,
+    endpointing: false,
+    handsFree: false,
+    ...over,
+  })
+  // Nobody clicked to open it, so nobody should have to click to close it. Without endpointing
+  // this used to wait the full two-minute recording limit, which reads as no response at all.
+  assert.equal(turnAction(turn({ unattended: true, lastSpeechAt: 5, elapsed: 5.5 })), 'wait')
+  assert.equal(turnAction(turn({ unattended: true, lastSpeechAt: 5, elapsed: 7.1 })), 'finish')
+  // Spoken to and then silent is finishing; never spoken to at all is abandoning.
+  assert.equal(turnAction(turn({ unattended: true, lastSpeechAt: 0, elapsed: 11 })), 'abandon')
+  // A turn the person opened themselves still waits for them, as it did before.
+  assert.equal(turnAction(turn({ lastSpeechAt: 5, elapsed: 30 })), 'wait')
+  // With endpointing on, the models judge the end of the thought rather than a bare timer.
+  assert.equal(
+    turnAction(turn({ unattended: true, endpointing: true, lastSpeechAt: 5, elapsed: 7.1 })),
+    'examine',
+  )
+})
+
 test('what is spoken is the words, not the marks that were meant for the eye', () => {
   assert.equal(spoken('The capital is **Paris**.'), 'The capital is Paris.')
   assert.equal(spoken('## Heading\n- one\n- two'), 'Heading\none\ntwo')

@@ -19,6 +19,12 @@ export const TURN_LIMIT_SECONDS = 120
 export const HANDS_FREE_PATIENCE_SECONDS = 10
 /** Playback tail left to settle before the microphone opens again, in milliseconds. */
 export const HANDS_FREE_SETTLE_MS = 400
+/**
+ * Silence that ends a turn nobody asked to open. A microphone the wake word opened cannot be left
+ * for the person to close by hand — they did not open it by hand. This is longer than the endpoint
+ * pause because no model is judging whether the thought is finished, only whether talking stopped.
+ */
+export const UNATTENDED_SILENCE_SECONDS = 2
 
 export type ListeningTurn = {
   /** Seconds recorded so far. */
@@ -31,6 +37,8 @@ export type ListeningTurn = {
   endpointing: boolean
   /** Whether this turn belongs to a hands-free session. */
   handsFree: boolean
+  /** Whether the turn was opened by something other than the person, so silence must close it. */
+  unattended?: boolean
 }
 export type TurnAction =
   /** Keep recording. */
@@ -47,6 +55,22 @@ export function turnAction(turn: ListeningTurn): TurnAction {
   if (turn.elapsed >= TURN_LIMIT_SECONDS) return 'finish'
   // A hands-free microphone opens without being asked, so it has to close the same way.
   if (turn.handsFree && turn.lastSpeechAt === 0 && turn.elapsed >= HANDS_FREE_PATIENCE_SECONDS)
+    return 'abandon'
+  // Opened by the wake word with no endpointing to close it: the models cannot judge the end of a
+  // thought on this Mac, but silence after speech is enough to stop a microphone nobody opened.
+  if (
+    turn.unattended &&
+    !turn.endpointing &&
+    turn.lastSpeechAt > 0 &&
+    turn.elapsed - turn.lastSpeechAt >= UNATTENDED_SILENCE_SECONDS
+  )
+    return 'finish'
+  if (
+    turn.unattended &&
+    !turn.endpointing &&
+    turn.lastSpeechAt === 0 &&
+    turn.elapsed >= HANDS_FREE_PATIENCE_SECONDS
+  )
     return 'abandon'
   if (
     turn.endpointing &&

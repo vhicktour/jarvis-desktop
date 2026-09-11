@@ -373,13 +373,27 @@ let bargeSpeechSeconds = 0
 let lastBargeAt = 0
 let playbackLevel = 0
 let blockedOnMicrophone = false
+/** Whether the open microphone was opened by the name rather than by a hand on the orb. */
+let turnFromWake = false
 /** Written down because a wake that never fires leaves nothing else behind to look at. */
 function note(line: string) {
   record(config.dataDir, line)
 }
 
+let reviewing = false
 /** Opens or closes the listening microphone to match what the settings and phase allow. */
 async function reviewWatch() {
+  // `watching` is only true once listen.start has answered, so two callers arriving inside that
+  // window both decide to open. Observed as four microphones started in 22 ms.
+  if (reviewing) return
+  reviewing = true
+  try {
+    await settleWatch()
+  } finally {
+    reviewing = false
+  }
+}
+async function settleWatch() {
   const wanted = shouldWatchForWake({
     wakeWord: state.settings.wakeWord,
     phase: state.voice.phase,
@@ -438,7 +452,11 @@ async function askTheWakeModel(generation: number) {
     const audio = await native('audio.preview')
     path = audio.path
     const result = await models.request('wake', { path })
-    note(`Wake score ${Number(result?.score ?? 0).toFixed(3)}${result?.awake ? ' — woke' : ''}.`)
+    const score = Number(result?.score ?? 0)
+    // Only what is worth reading back: a near-zero score repeated hundreds of times evicts the
+    // lines that explain anything from a log that is deliberately bounded.
+    if (result?.awake || score >= 0.05)
+      note(`Wake score ${score.toFixed(3)}${result?.awake ? ' — woke' : ''}.`)
     if (generation !== watchGeneration || !watching) return
     if (result.awake) await wake('“Hey Jarvis”')
   } catch (error) {
@@ -488,6 +506,8 @@ async function interruptReply() {
 }
 /** The name was heard: close the listening microphone and open a real turn behind it. */
 async function wake(how: string) {
+  // Nobody clicked to open this, so nobody should have to click to close it.
+  turnFromWake = true
   watching = false
   watchGeneration++
   state.voice.watching = false
@@ -636,6 +656,7 @@ async function toggleVoice() {
     if (state.voice.phase === 'listening') {
       const generation = state.voice.generation
       const audio = await native('audio.stop')
+      turnFromWake = false
       state.voice.phase = 'transcribing'
       state.voice.level = 0
       publish(false)
@@ -1601,6 +1622,7 @@ parent.on('message', async ({ data: message }: { data: any }) => {
         lastEndpointAt,
         endpointing: state.settings.automaticEndpointing,
         handsFree: state.voice.handsFree,
+        unattended: turnFromWake,
       })
       if (action === 'examine') {
         lastEndpointAt = params.elapsed
