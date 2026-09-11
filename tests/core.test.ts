@@ -41,6 +41,13 @@ import {
   type ResumeContext,
   WAKE_MODEL,
   SPEECH_LEVEL,
+  NAME_GAP_SECONDS,
+  NAME_MAX_SECONDS,
+  NAME_MIN_SECONDS,
+  isNameSpoken,
+  nameWakeReady,
+  shouldTranscribeForName,
+  type SpokenBurst,
   bargeInReady,
   isInterruption,
   shouldScoreWake,
@@ -1407,26 +1414,85 @@ test('an idle room never reaches the wake model, and echo never counts as an int
 })
 
 test('waking and interrupting are cleared when the model behind them goes', () => {
-  const both = (id: string) => ['silero', 'smart-turn', WAKE_MODEL].includes(id)
-  const on = { wakeWord: true, bargeIn: true, automaticEndpointing: true, handsFree: true }
+  const both = (id: string) => ['silero', 'smart-turn', 'parakeet', WAKE_MODEL].includes(id)
+  const on = {
+    wakeWord: true,
+    wakeOnName: true,
+    bargeIn: true,
+    automaticEndpointing: true,
+    handsFree: true,
+  }
   assert.equal(wakeReady(both), true)
   assert.equal(bargeInReady(both), true)
   assert.deepEqual(withListeningDependencies(on, both), on)
   // Losing the wake model takes waking with it and leaves the rest standing.
   assert.deepEqual(
     withListeningDependencies(on, (id) => id !== WAKE_MODEL),
-    { ...on, wakeWord: false },
+    // The bare name is heard by the microphone the phrase holds open, so it goes too.
+    { ...on, wakeWord: false, wakeOnName: false },
   )
   // Losing Silero takes both interrupting and, through endpointing, hands-free.
   assert.deepEqual(
     withListeningDependencies(on, (id) => id === WAKE_MODEL),
-    { wakeWord: true, bargeIn: false, automaticEndpointing: true, handsFree: true },
+    // Nothing left that can transcribe, so the bare name goes with the interruption.
+    {
+      wakeWord: true,
+      wakeOnName: false,
+      bargeIn: false,
+      automaticEndpointing: true,
+      handsFree: true,
+    },
   )
   // Switching endpointing off still clears hands-free, and leaves waking alone.
   assert.deepEqual(withListeningDependencies({ ...on, automaticEndpointing: false }, both), {
     wakeWord: true,
+    wakeOnName: true,
     bargeIn: true,
     automaticEndpointing: false,
     handsFree: false,
   })
+  // The bare name cannot stand without the phrase that holds the microphone open.
+  assert.equal(withListeningDependencies({ ...on, wakeWord: false }, both).wakeOnName, false)
+})
+
+test('the bare name is read from short bursts only, and read strictly', () => {
+  // The length gate is the privacy boundary: outside it nothing is transcribed at all.
+  const burst = (over: Partial<SpokenBurst> = {}) =>
+    shouldTranscribeForName({ burstSeconds: 0.7, quietSeconds: 0.5, busy: false, ...over })
+  assert.equal(burst(), true)
+  assert.equal(burst({ burstSeconds: NAME_MIN_SECONDS }), true)
+  assert.equal(burst({ burstSeconds: NAME_MAX_SECONDS }), true)
+  // A cough is not a word; a sentence is somebody's conversation.
+  assert.equal(burst({ burstSeconds: NAME_MIN_SECONDS - 0.01 }), false)
+  assert.equal(burst({ burstSeconds: NAME_MAX_SECONDS + 0.01 }), false)
+  assert.equal(burst({ burstSeconds: 8 }), false)
+  // A pause mid-word is not the end of the burst.
+  assert.equal(burst({ quietSeconds: NAME_GAP_SECONDS - 0.01 }), false)
+  // One transcription at a time.
+  assert.equal(burst({ busy: true }), false)
+
+  // What counts as being called.
+  for (const said of ['Jarvis', 'jarvis.', 'Jarvis!', 'Jarvis?', 'Hey Jarvis', 'hey, jarvis.'])
+    assert.equal(isNameSpoken(said), true, said)
+  // Near misses, and anything that is a request rather than a name.
+  for (const said of [
+    'Travis',
+    'Hey Travis',
+    'Service',
+    'Jarvis, what is the weather',
+    'tell Jarvis',
+    '',
+    'is that Jarvis',
+  ])
+    assert.equal(isNameSpoken(said), false, said)
+  // Whitespace around a transcript should not decide whether Jarvis answers.
+  assert.equal(isNameSpoken('  Jarvis.  '), true)
+  assert.equal(
+    nameWakeReady((id) => id === 'whisper'),
+    true,
+  )
+  assert.equal(
+    nameWakeReady((id) => id === 'kokoro'),
+    false,
+  )
 })

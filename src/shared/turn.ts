@@ -95,6 +95,51 @@ export const BARGE_IN_MARGIN = 0.5
 /** Playback start is the worst moment for residual echo, so it is not listened through. */
 export const BARGE_IN_SETTLE_SECONDS = 0.25
 
+/**
+ * The wake model is trained on the two-word phrase and scores a bare "Jarvis" at the floor,
+ * so the name on its own is heard a second way: a burst of speech short enough to be one
+ * word is transcribed and read. Anything longer than a name is never transcribed at all.
+ */
+export const NAME_MODELS = ['parakeet', 'whisper'] as const
+/** Shorter than this is not a word. */
+export const NAME_MIN_SECONDS = 0.25
+/** Longer than this is a sentence, and a sentence is somebody's conversation. */
+export const NAME_MAX_SECONDS = 1.2
+/** Quiet needed after a burst before it counts as finished rather than paused. */
+export const NAME_GAP_SECONDS = 0.35
+/**
+ * Anchored at both ends: a clip holding the name and nothing else. A request that opens
+ * with the name is a sentence, which never reaches here — it is too long to be transcribed.
+ */
+const SPOKEN_NAME = /^(?:hey[,\s]+)?jarvis\b[\s.,!?…]*$/i
+
+/** Whether a transcript of a short burst is the name being called. */
+export function isNameSpoken(text: string) {
+  return SPOKEN_NAME.test(text.trim())
+}
+/** Hearing the bare name needs something that can transcribe one word. */
+export function nameWakeReady(qualified: (id: string) => boolean) {
+  return NAME_MODELS.some((id) => qualified(id))
+}
+
+export type SpokenBurst = {
+  /** Length of the burst of speech that just ended, in seconds. */
+  burstSeconds: number
+  /** Seconds of quiet since the burst ended. */
+  quietSeconds: number
+  /** Whether a transcription is already running. */
+  busy: boolean
+}
+/**
+ * Whether a burst that just ended is worth transcribing to see if it was the name. The
+ * length gate is the privacy boundary, not an optimisation: a burst outside it is never
+ * sent to recognition, so ordinary talk in the room is never transcribed.
+ */
+export function shouldTranscribeForName(burst: SpokenBurst) {
+  if (burst.busy || burst.quietSeconds < NAME_GAP_SECONDS) return false
+  return burst.burstSeconds >= NAME_MIN_SECONDS && burst.burstSeconds <= NAME_MAX_SECONDS
+}
+
 /** Waking is offered only where the wake model has passed its check on this Mac. */
 export function wakeReady(qualified: (id: string) => boolean) {
   return qualified(WAKE_MODEL)
@@ -110,15 +155,19 @@ export function bargeInReady(qualified: (id: string) => boolean) {
 export function withListeningDependencies<
   T extends {
     wakeWord: boolean
+    wakeOnName: boolean
     bargeIn: boolean
     automaticEndpointing: boolean
     handsFree: boolean
   },
 >(settings: T, qualified: (id: string) => boolean): T {
   const settled = withVoiceDependencies(settings)
+  const wakeWord = settled.wakeWord && wakeReady(qualified)
   return {
     ...settled,
-    wakeWord: settled.wakeWord && wakeReady(qualified),
+    wakeWord,
+    // Nothing holds the microphone open for the bare name on its own, so it follows the phrase.
+    wakeOnName: wakeWord && settled.wakeOnName && nameWakeReady(qualified),
     bargeIn: settled.bargeIn && bargeInReady(qualified),
   }
 }

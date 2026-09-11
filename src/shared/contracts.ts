@@ -184,6 +184,7 @@ export const Settings = z.object({
   conversationEngine: z.enum(['pipeline', 'duplex', 'realtime']).default('pipeline'),
   handsFree: z.boolean().default(false),
   wakeWord: z.boolean().default(false),
+  wakeOnName: z.boolean().default(false),
   bargeIn: z.boolean().default(false),
   replyLength: z.enum(['brief', 'measured', 'full']).default('measured'),
   voice: z.string().default('bm_george'),

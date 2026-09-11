@@ -1,6 +1,6 @@
 import { Headphones, Mic, Volume2 } from 'lucide-react'
-import { ENDPOINT_MODELS } from '../../../shared/turn'
 import { DUPLEX_MODEL, type ConversationEngine } from '../../../shared/speech'
+import { ENDPOINT_MODELS, NAME_MODELS, WAKE_MODEL } from '../../../shared/turn'
 import { useJarvis } from '../state'
 import { Core } from '../Orb'
 import { Button, Group, Row, Toggle } from '../ui'
@@ -57,6 +57,13 @@ export function Voice() {
       blocked: 'Connect OpenAI Realtime in Connections first.',
     },
   ]
+  const qualified = (id: string) =>
+    snapshot.models.some((model) => model.id === id && model.qualified)
+  const wakeName =
+    snapshot.models.find((model) => model.id === WAKE_MODEL)?.name ?? 'the wake model'
+  const canWake = qualified(WAKE_MODEL)
+  const canHearName = NAME_MODELS.some(qualified)
+  const canInterrupt = qualified('silero')
   return (
     <>
       <div className="voice-card">
@@ -195,6 +202,52 @@ export function Voice() {
           selected={snapshot.settings.handsFree}
           onChange={(handsFree) => {
             void command({ type: 'settings.update', patch: { handsFree } })
+          }}
+        />
+      </Group>
+      <Group
+        title="Answering to your name"
+        detail="The microphone stays open to hear it. Nothing is written down until a turn begins."
+      >
+        <Toggle
+          label="Answer to “Hey Jarvis”"
+          description={
+            canWake
+              ? 'The microphone listens for the phrase and nothing else. It never transcribes what it hears.'
+              : `Install and check ${wakeName} in Local models before Jarvis can hear its name.`
+          }
+          isDisabled={!canWake}
+          selected={snapshot.settings.wakeWord}
+          onChange={(wakeWord) => {
+            void command({ type: 'settings.update', patch: { wakeWord } })
+          }}
+        />
+        <Toggle
+          label="Answer to “Jarvis” on its own"
+          description={
+            !snapshot.settings.wakeWord
+              ? 'Switch on “Hey Jarvis” first; the bare name is heard by the same open microphone.'
+              : canHearName
+                ? 'The phrase model cannot hear the name alone, so a burst of speech short enough to be one word is transcribed on this Mac to check. Anything longer is never transcribed.'
+                : 'Install and check Parakeet in Local models before Jarvis can hear the bare name.'
+          }
+          isDisabled={!snapshot.settings.wakeWord || !canHearName}
+          selected={snapshot.settings.wakeOnName}
+          onChange={(wakeOnName) => {
+            void command({ type: 'settings.update', patch: { wakeOnName } })
+          }}
+        />
+        <Toggle
+          label="Let me interrupt"
+          description={
+            canInterrupt
+              ? 'Speak over a reply to stop it. Needs echo cancellation on this audio route, or Jarvis would interrupt itself.'
+              : 'Install and check Silero VAD in Local models before Jarvis can tell you from itself.'
+          }
+          isDisabled={!canInterrupt}
+          selected={snapshot.settings.bargeIn}
+          onChange={(bargeIn) => {
+            void command({ type: 'settings.update', patch: { bargeIn } })
           }}
         />
       </Group>
