@@ -183,6 +183,9 @@ export const Settings = z.object({
   automaticEndpointing: z.boolean().default(false),
   conversationEngine: z.enum(['pipeline', 'duplex', 'realtime']).default('pipeline'),
   handsFree: z.boolean().default(false),
+  wakeWord: z.boolean().default(false),
+  bargeIn: z.boolean().default(false),
+  replyLength: z.enum(['brief', 'measured', 'full']).default('measured'),
   voice: z.string().default('bm_george'),
   voiceSpeed: z.number().min(0.7).max(1.4).default(1),
   privacyMode: z.enum(['local-first', 'local-only']).default('local-first'),
@@ -226,6 +229,8 @@ export type VoiceStatus = {
   generation: number
   /** Whether a hands-free session is running, so the microphone opens again after each reply. */
   handsFree: boolean
+  /** Whether the microphone is held open listening for the name rather than for a turn. */
+  watching: boolean
 }
 export type Message = {
   id: string
@@ -282,7 +287,7 @@ export type Connection = {
   capabilities: string[]
 }
 export type ModelRole =
-  'asr' | 'tts' | 'reasoning' | 'embedding' | 'vad' | 'turn' | 'duplex' | 'vision'
+  'asr' | 'tts' | 'reasoning' | 'embedding' | 'vad' | 'turn' | 'wake' | 'duplex' | 'vision'
 export type ModelRecord = {
   id: string
   name: string

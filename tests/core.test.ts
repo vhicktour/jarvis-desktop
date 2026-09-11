@@ -39,7 +39,19 @@ import {
   withVoiceDependencies,
   type ListeningTurn,
   type ResumeContext,
+  WAKE_MODEL,
+  SPEECH_LEVEL,
+  bargeInReady,
+  isInterruption,
+  shouldScoreWake,
+  shouldWatchForWake,
+  wakeReady,
+  withListeningDependencies,
+  type PlaybackListen,
+  type WakeScoring,
+  type WakeWatch,
 } from '../src/shared/turn'
+import { replyChoices, replyShape, spokenInstruction, type ReplyLength } from '../src/shared/reply'
 
 function database() {
   const dir = mkdtempSync(join(tmpdir(), 'jarvis-test-'))
@@ -1319,4 +1331,102 @@ test('the microphone reopens only for a live hands-free session that is not othe
   assert.equal(shouldReopenMicrophone(context({ automaticEndpointing: false })), false)
   // A model removed mid-session closes the loop rather than leaving a microphone nothing ends.
   assert.equal(shouldReopenMicrophone(context({ qualified: (id) => id === 'silero' })), false)
+})
+
+test('reply length carries a ceiling, because an instruction alone drifts', () => {
+  const brief = replyShape('brief')
+  const measured = replyShape('measured')
+  const full = replyShape('full')
+  // Shorter is shorter in both halves, or the setting only appears to do something.
+  assert.ok(brief.maxTokens < measured.maxTokens)
+  assert.ok(measured.maxTokens < full.maxTokens)
+  assert.match(brief.instruction, /one short sentence/i)
+  // The longest length asks for nothing and relies on the ceiling alone.
+  assert.equal(full.instruction, '')
+  // An unknown stored value must not strip the ceiling off a reply.
+  assert.deepEqual(replyShape('elaborate' as ReplyLength), measured)
+  assert.deepEqual(
+    replyChoices().map((c) => c.id),
+    ['brief', 'measured', 'full'],
+  )
+  // Spoken replies add their own constraint rather than replacing the chosen length.
+  assert.match(spokenInstruction(), /no markdown/i)
+  assert.equal(Settings.parse({}).replyLength, 'measured')
+})
+
+test('the microphone listens for the name only when nobody is taking a turn', () => {
+  const watch = (over: Partial<WakeWatch> = {}): WakeWatch => ({
+    wakeWord: true,
+    phase: 'off',
+    locked: false,
+    closing: false,
+    bargeIn: false,
+    ...over,
+  })
+  assert.equal(shouldWatchForWake(watch()), true)
+  // An error left the orb idle; it should still answer to its name.
+  assert.equal(shouldWatchForWake(watch({ phase: 'error' })), true)
+  assert.equal(shouldWatchForWake(watch({ wakeWord: false })), false)
+  // Never behind a turn the person already started.
+  for (const phase of ['listening', 'transcribing', 'thinking'] as const)
+    assert.equal(shouldWatchForWake(watch({ phase })), false)
+  assert.equal(shouldWatchForWake(watch({ locked: true })), false)
+  assert.equal(shouldWatchForWake(watch({ closing: true })), false)
+  // While speaking, the microphone is open only to be interrupted, and only if allowed.
+  assert.equal(shouldWatchForWake(watch({ phase: 'speaking' })), false)
+  assert.equal(shouldWatchForWake(watch({ phase: 'speaking', bargeIn: true })), true)
+  // Interrupting is its own permission: it does not need the name switched on.
+  assert.equal(
+    shouldWatchForWake(watch({ phase: 'speaking', wakeWord: false, bargeIn: true })),
+    true,
+  )
+})
+
+test('an idle room never reaches the wake model, and echo never counts as an interruption', () => {
+  // Scoring follows speech, and lingers so a name finishing in silence is still in the buffer.
+  const score = (over: Partial<WakeScoring>) =>
+    shouldScoreWake({ level: 0, quietSeconds: 10, sinceScoredMs: 1000, ...over })
+  assert.equal(score({ level: SPEECH_LEVEL }), true)
+  assert.equal(score({ level: 0, quietSeconds: 0.5 }), true)
+  assert.equal(score({ level: 0, quietSeconds: 10 }), false)
+  // Never faster than the interval, however loud the room is.
+  assert.equal(score({ level: 1, sinceScoredMs: 10 }), false)
+
+  const heard = (over: Partial<PlaybackListen>) =>
+    isInterruption({ speechSeconds: 1, elapsed: 5, level: 0.9, playbackLevel: 0.2, ...over })
+  assert.equal(heard({}), true)
+  // Residual echo tracks the reply, so a microphone that merely matches it is not believed.
+  assert.equal(heard({ level: 0.09, playbackLevel: 0.9 }), false)
+  assert.equal(heard({ level: 0.6, playbackLevel: 0.9 }), true)
+  // One frame over the line is the shape echo takes.
+  assert.equal(heard({ speechSeconds: 0.1 }), false)
+  // Silence is not an interruption however quiet the reply is.
+  assert.equal(heard({ level: 0.01, playbackLevel: 0 }), false)
+  // The start of playback is the worst moment for echo, so it is not listened through.
+  assert.equal(heard({ elapsed: 0.1 }), false)
+})
+
+test('waking and interrupting are cleared when the model behind them goes', () => {
+  const both = (id: string) => ['silero', 'smart-turn', WAKE_MODEL].includes(id)
+  const on = { wakeWord: true, bargeIn: true, automaticEndpointing: true, handsFree: true }
+  assert.equal(wakeReady(both), true)
+  assert.equal(bargeInReady(both), true)
+  assert.deepEqual(withListeningDependencies(on, both), on)
+  // Losing the wake model takes waking with it and leaves the rest standing.
+  assert.deepEqual(
+    withListeningDependencies(on, (id) => id !== WAKE_MODEL),
+    { ...on, wakeWord: false },
+  )
+  // Losing Silero takes both interrupting and, through endpointing, hands-free.
+  assert.deepEqual(
+    withListeningDependencies(on, (id) => id === WAKE_MODEL),
+    { wakeWord: true, bargeIn: false, automaticEndpointing: true, handsFree: true },
+  )
+  // Switching endpointing off still clears hands-free, and leaves waking alone.
+  assert.deepEqual(withListeningDependencies({ ...on, automaticEndpointing: false }, both), {
+    wakeWord: true,
+    bargeIn: true,
+    automaticEndpointing: false,
+    handsFree: false,
+  })
 })

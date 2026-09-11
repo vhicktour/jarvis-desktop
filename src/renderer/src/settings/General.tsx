@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { Liquid } from 'liquid-gooey'
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp } from 'lucide-react'
+import { replyChoices, type ReplyLength } from '../../../shared/reply'
 import { useJarvis } from '../state'
 import { Core, useActivity } from '../Orb'
-import { Badge, Group, IconButton, Row, Toggle } from '../ui'
+import { Badge, Choice, Group, IconButton, Row, Toggle } from '../ui'
 
 export function General() {
   const { snapshot, command } = useJarvis()
@@ -85,6 +86,22 @@ export function General() {
             void command({ type: 'settings.update', patch: { speakReplies } })
           }}
         />
+        <Row
+          title="How much Jarvis says"
+          description="Applies to what you read as well as what you hear."
+        >
+          <Choice
+            label="Reply length"
+            value={snapshot.settings.replyLength}
+            options={replyChoices()}
+            onChange={(replyLength) => {
+              void command({
+                type: 'settings.update',
+                patch: { replyLength: replyLength as ReplyLength },
+              })
+            }}
+          />
+        </Row>
       </Group>
       <Group title="Your corner of the world">
         <Toggle

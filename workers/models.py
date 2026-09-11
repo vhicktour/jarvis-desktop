@@ -38,7 +38,7 @@ QUALIFY_TAKES = 3
 DUPLEX_QUESTION = "What is the capital of France?"
 DUPLEX_KEY = "paris"
 # Roles this worker has a real load path for. Anything else cannot be installed or checked.
-RUNNABLE_ROLES = {"asr", "tts", "reasoning", "embedding", "vad", "turn", "vision", "duplex"}
+RUNNABLE_ROLES = {"asr", "tts", "reasoning", "embedding", "vad", "turn", "wake", "vision", "duplex"}
 
 def send(value):
     data = json.dumps(value, ensure_ascii=False, allow_nan=False)
@@ -408,12 +408,22 @@ def endpoint_fixtures(cancelled):
     silence = np.zeros(rate * 3, dtype=np.float32)
     return [write_audio(value, rate) for value in (finished, unfinished, silence)]
 
+def wake_fixtures(cancelled):
+    """The name, a sentence that is not the name, and silence — one render each."""
+    import numpy as np
+    called, rate = synthesize("Hey Jarvis.", "bm_george", 1.0, cancelled)
+    # The phrase model reads the end of the clip, so the name is left where it lands.
+    called = np.concatenate([np.zeros(int(rate * 0.4), dtype=np.float32), called])
+    other, _ = synthesize("Good evening. Ready when you are.", "bm_george", 1.0, cancelled)
+    silence = np.zeros(rate * 2, dtype=np.float32)
+    return [write_audio(value, rate) for value in (called, other, silence)]
+
 def qualify(model_id, item, cancelled):
     """Run the observable behavior this role is relied on for, and report what was seen."""
     import numpy as np
     role = item["role"]
     stage = lambda message: event("model.progress", {"id": model_id, "stage": message})
-    if role in ("asr", "vad", "turn", "duplex"):
+    if role in ("asr", "vad", "turn", "wake", "duplex"):
         require("kokoro", "it renders the fixed phrase these checks listen to.")
     if role == "turn":
         require("silero", "it decides whether the clip still contains speech.")
@@ -553,6 +563,29 @@ def qualify(model_id, item, cancelled):
         finally:
             path.unlink(missing_ok=True)
         return checks
+    if role == "wake":
+        from wake import predict as wake_predict, THRESHOLD as WAKE_THRESHOLD
+        weights = model_path(model_id)
+        takes = []
+        for index in range(QUALIFY_TAKES):
+            stage(f"Rendering the name and what is not the name, take {index + 1} of {QUALIFY_TAKES}")
+            paths = wake_fixtures(cancelled)
+            try:
+                stage(f"Running {item['name']}, take {index + 1} of {QUALIFY_TAKES}")
+                takes.append([wake_predict(str(path), weights) for path in paths])
+            finally:
+                for path in paths:
+                    path.unlink(missing_ok=True)
+        called = [take[0] for take in takes]
+        other = [take[1] for take in takes]
+        quiet = [take[2] for take in takes]
+        spread = ", ".join(f"{result['score']:.3f}" for result in called)
+        return [
+            check("Score in range", spread, all(0.0 <= result["score"] <= 1.0 for result in called)),
+            check(f"The name reaches {WAKE_THRESHOLD}", f"{spread} · lowest {min(result['score'] for result in called):.3f}", all(result["awake"] is True for result in called)),
+            check("Other speech never wakes", *tally(other, "awake", False)),
+            check("Silence never wakes", *tally(quiet, "awake", False)),
+        ]
     if role in ("vad", "turn"):
         from endpoint import predict, THRESHOLD
         turn = model_path("smart-turn") if role == "turn" else None
@@ -672,6 +705,9 @@ def execute(request):
         elif method == "endpoint":
             from endpoint import predict
             result = predict(bounded_audio(p["path"]), model_path("silero"), model_path("smart-turn"))
+        elif method == "wake":
+            from wake import predict as wake_predict
+            result = wake_predict(bounded_audio(p["path"]), model_path("openwakeword"))
         elif method == "tts":
             samples, rate = synthesize(p["text"], p.get("voice", "bm_george"), p.get("speed", 1), cancelled)
             path = write_audio(samples, rate)
