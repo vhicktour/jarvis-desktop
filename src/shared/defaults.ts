@@ -17,6 +17,14 @@ export const CONNECTIONS: Connection[] = [
     capabilities: ['Review', 'Reasoning'],
   },
   {
+    id: 'openai-realtime',
+    name: 'OpenAI Realtime',
+    description:
+      'Speech to speech in the cloud. Your voice and the context of a turn leave this Mac.',
+    status: 'disconnected',
+    capabilities: ['Speech', 'Cloud'],
+  },
+  {
     id: 'automation',
     name: 'Controls you approve',
     description: 'Press a named control in an application, after you approve the exact one.',

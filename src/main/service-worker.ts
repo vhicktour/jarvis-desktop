@@ -31,7 +31,7 @@ import {
   type WindowChoice,
 } from '../shared/contracts'
 import { emptySnapshot } from '../shared/defaults'
-import { spoken } from '../shared/speech'
+import { DUPLEX_MODEL, engineInUse, engineReady, spoken } from '../shared/speech'
 import {
   HANDS_FREE_SETTLE_MS,
   SPEECH_LEVEL,
@@ -265,8 +265,16 @@ async function init(input: any) {
   background(
     models.start().then(() => {
       publish()
-      // Warming holds the worker for a few seconds; the notes index can wait behind it.
-      return models.warm().then(() => vault.restore())
+      // Warming holds the worker for a few seconds; the notes index can wait behind it. Only the
+      // models the chosen engine actually uses are loaded — the others would just hold memory.
+      const engine = engineInUse(
+        store.settings().conversationEngine,
+        (id) => models.qualified(id),
+        (id) => providers.connections.some((x) => x.id === id && x.status === 'connected'),
+      )
+      return models
+        .warm(engine === 'duplex' ? ['duplex', 'asr'] : undefined)
+        .then(() => vault.restore())
     }),
   )
   background(providers.restore())
@@ -295,7 +303,7 @@ function modelEvent(message: any) {
     publish(false)
   }
   if (
-    message.method === 'chat.audio' &&
+    (message.method === 'chat.audio' || message.method === 'duplex.audio') &&
     spokenReply &&
     message.params.conversationId === spokenReply.conversationId
   ) {
@@ -469,6 +477,18 @@ async function toggleVoice() {
         (async () => {
           try {
             invariant(audio.path, 'No audio was captured.')
+            // A duplex model hears the recording and answers from it, so nothing is transcribed
+            // first. What was said is written down afterwards, off the path to the reply.
+            if (
+              engineInUse(
+                state.settings.conversationEngine,
+                (id) => models.qualified(id),
+                (id) => providers.connections.some((x) => x.id === id && x.status === 'connected'),
+              ) === 'duplex'
+            ) {
+              await converseAloud(audio.path, generation)
+              return
+            }
             let result: { text: string }
             try {
               // Whisper transcribes faster here and its weights are small enough to stay
@@ -564,6 +584,89 @@ async function checkEndpoint(generation: number, speechAt: number) {
     endpointBusy = false
     if (path) await native('ephemeral.delete', { path })
   }
+}
+/**
+ * A turn held by one speech-to-speech model. It hears the recording and answers in its own voice,
+ * so there is no transcript to search memory with before the reply — what was said is written down
+ * afterwards, which keeps it out of the path to the first word and available to the next turn.
+ */
+async function converseAloud(path: string, generation: number) {
+  invariant(
+    !conversation,
+    'Jarvis is still answering. Click the orb to interrupt, then send your next thought.',
+  )
+  const scope = state.activeProjectId ?? 'personal'
+  const controller = new AbortController()
+  conversation = controller
+  const user: Message = { id: uid(), role: 'user', text: '', createdAt: now(), scope }
+  const assistant: Message = {
+    id: uid(),
+    role: 'assistant',
+    text: '',
+    createdAt: now(),
+    scope,
+    streaming: true,
+  }
+  state.messages.push(user, assistant)
+  state.voice.phase = 'thinking'
+  state.voice.error = undefined
+  await stopSpeech()
+  spokenReply = { conversationId: assistant.id, generation: state.voice.generation, clips: 0 }
+  if (state.voice.handsFree) resumeGeneration = state.voice.generation
+  publish()
+  try {
+    const said = state.messages.filter((m) => m.text.trim()).slice(-8)
+    const result = await models.request(
+      'duplex',
+      {
+        conversationId: assistant.id,
+        path,
+        instructions: `You are Jarvis, a composed, concise British personal assistant. You are heard, not read, so answer in one or two sentences. Never claim work was done. Local time: ${new Date().toString()}.`,
+        history: said.map((m) => ({ role: m.role, text: m.text })),
+      },
+      controller.signal,
+    )
+    controller.signal.throwIfAborted()
+    assistant.text = result.text
+    assistant.streaming = false
+    const spoke = (spokenReply?.clips ?? 0) > 0
+    spokenReply = undefined
+    if (state.settings.transcriptDays > 0) store.saveMessage(assistant)
+    if (!spoke) {
+      state.voice.phase = 'off'
+      endHandsFree()
+      notice('The reply produced no sound. Check Settings → Local models.', 'error')
+    }
+    // Off the path to the answer: what the person said, for the record and for the next recall.
+    background(
+      models
+        .request('asr', { path, model: 'whisper' })
+        .then((heard: { text: string }) => {
+          if (!heard.text.trim()) return
+          user.text = heard.text
+          state.voice.partial = heard.text
+          if (state.settings.transcriptDays > 0) store.saveMessage(user)
+          publish(false)
+          return proposeMemory(user).catch(() => {})
+        })
+        .catch(() => {}),
+    )
+  } catch (error) {
+    assistant.streaming = false
+    spokenReply = undefined
+    endHandsFree()
+    if (controller.signal.aborted) assistant.text ||= 'Interrupted.'
+    else if (generation === state.voice.generation) {
+      assistant.text = safeError(error)
+      state.voice.phase = 'error'
+      state.voice.error = safeError(error)
+      notice(safeError(error), 'error')
+    }
+  } finally {
+    if (conversation === controller) conversation = undefined
+    publish()
+  }
+  return true
 }
 async function converse(text: string) {
   invariant(
@@ -922,6 +1025,21 @@ async function command(value: any): Promise<unknown> {
       invariant(
         !c.patch.automaticEndpointing || endpointingReady((id) => models.qualified(id)),
         'Silero and Smart Turn need to pass their checks in Settings → Local models before Jarvis can finish a turn for you.',
+      )
+      invariant(
+        !c.patch.conversationEngine ||
+          engineReady(
+            c.patch.conversationEngine,
+            (id) => models.qualified(id),
+            (id) => providers.connections.some((x) => x.id === id && x.status === 'connected'),
+          ),
+        c.patch.conversationEngine === 'realtime'
+          ? 'Connect OpenAI Realtime in Settings → Connections first. Until it is connected, Jarvis has nothing to send your voice to.'
+          : 'The speech-to-speech model needs to pass its checks in Settings → Local models before it can hold a conversation.',
+      )
+      invariant(
+        c.patch.conversationEngine !== 'realtime' || settings.privacyMode !== 'local-only',
+        'Local-only mode is on, and OpenAI Realtime would send your voice off this Mac. Change one or the other.',
       )
       invariant(
         !c.patch.handsFree || handsFreeReady(settings, (id) => models.qualified(id)),

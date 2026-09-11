@@ -16,7 +16,7 @@ function ConnectionRow({ connection }: { connection: Connection }) {
       type: 'connection.connect',
       id: connection.id,
       config:
-        connection.id === 'claude'
+        connection.id === 'claude' || connection.id === 'openai-realtime'
           ? { apiKey: key }
           : connection.id === 'google'
             ? { clientId, clientSecret: key }
@@ -36,19 +36,21 @@ function ConnectionRow({ connection }: { connection: Connection }) {
           <span>
             {connection.id === 'codex'
               ? '◈'
-              : connection.id === 'claude'
-                ? '✳'
-                : connection.id === 'google'
-                  ? 'G'
-                  : connection.id === 'apple-calendar'
-                    ? '10'
-                    : connection.id === 'apple-reminders'
-                      ? '≡'
-                      : connection.id === 'apple-mail'
-                        ? '@'
-                        : connection.id === 'mcp'
-                          ? '⌁'
-                          : '◎'}
+              : connection.id === 'openai-realtime'
+                ? '◉'
+                : connection.id === 'claude'
+                  ? '✳'
+                  : connection.id === 'google'
+                    ? 'G'
+                    : connection.id === 'apple-calendar'
+                      ? '10'
+                      : connection.id === 'apple-reminders'
+                        ? '≡'
+                        : connection.id === 'apple-mail'
+                          ? '@'
+                          : connection.id === 'mcp'
+                            ? '⌁'
+                            : '◎'}
           </span>
         </div>
         <div>
@@ -128,9 +130,11 @@ function ConnectionRow({ connection }: { connection: Connection }) {
                 label={
                   connection.id === 'claude'
                     ? 'Anthropic API key'
-                    : connection.id === 'google'
-                      ? 'OAuth client secret'
-                      : 'Arguments (JSON array)'
+                    : connection.id === 'openai-realtime'
+                      ? 'OpenAI API key'
+                      : connection.id === 'google'
+                        ? 'OAuth client secret'
+                        : 'Arguments (JSON array)'
                 }
                 value={key}
                 onChange={setKey}

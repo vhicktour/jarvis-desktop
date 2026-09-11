@@ -34,6 +34,9 @@ QUALIFY_TEXT = "Good evening. I am Jarvis. Ready when you are."
 QUALIFY_KEY = "ready when you are"
 # Synthesis is not bit-identical between renders, so endpointing is judged over several takes.
 QUALIFY_TAKES = 3
+# A duplex model is asked something with one right answer, so hearing can be told from guessing.
+DUPLEX_QUESTION = "What is the capital of France?"
+DUPLEX_KEY = "paris"
 # Roles this worker has a real load path for. Anything else cannot be installed or checked.
 RUNNABLE_ROLES = {"asr", "tts", "reasoning", "embedding", "vad", "turn", "vision", "duplex"}
 
@@ -410,7 +413,7 @@ def qualify(model_id, item, cancelled):
     import numpy as np
     role = item["role"]
     stage = lambda message: event("model.progress", {"id": model_id, "stage": message})
-    if role in ("asr", "vad", "turn"):
+    if role in ("asr", "vad", "turn", "duplex"):
         require("kokoro", "it renders the fixed phrase these checks listen to.")
     if role == "turn":
         require("silero", "it decides whether the clip still contains speech.")
@@ -443,6 +446,47 @@ def qualify(model_id, item, cancelled):
         return [
             check("Transcript", text, QUALIFY_KEY in spoken_words(text)),
             check("Recognition speed", f"{duration / elapsed:.1f}× realtime", elapsed < duration * 5),
+        ]
+    if role == "duplex":
+        import soundfile as sf
+        stage("Rendering the spoken question")
+        samples, rate = synthesize(DUPLEX_QUESTION, "bm_george", 1.0, cancelled)
+        asked = write_audio(samples, rate)
+        stage(f"Loading {item['name']}")
+        load(model_id, "duplex")
+        def turn():
+            clips = []
+            try:
+                started = time.perf_counter()
+                said, spoken = duplex_reply(
+                    str(asked), "You are Jarvis, a concise British assistant. Answer in one short sentence.",
+                    None, cancelled, lambda path, duration: clips.append((path, duration)),
+                )
+                elapsed = time.perf_counter() - started
+                heard = [np.asarray(sf.read(path, dtype="float32")[0]).reshape(-1) for path, _ in clips]
+            finally:
+                for path, _ in clips:
+                    Path(path).unlink(missing_ok=True)
+            answer = np.concatenate(heard) if heard else np.zeros(1, dtype="float32")
+            return said, spoken, elapsed, len(clips), float(np.sqrt(np.mean(np.square(answer))))
+        try:
+            # The first generation after loading pays for kernel compilation and is not the speed a
+            # conversation runs at; the application warms the model at launch for the same reason.
+            stage("Warming the model with one turn")
+            _, first_spoken, first_elapsed, _, _ = turn()
+            stage("Holding one spoken turn")
+            said, spoken, elapsed, pieces, energy = turn()
+        finally:
+            asked.unlink(missing_ok=True)
+        first_pace = first_spoken / first_elapsed if first_elapsed > 0 else 0
+        # Generation outpacing playback is what lets a reply start early and never run dry.
+        pace = spoken / elapsed if elapsed > 0 else 0
+        return [
+            check("Answer it spoke", said, DUPLEX_KEY in spoken_words(said)),
+            check("Length of the answer", f"{spoken:.2f} s", spoken >= 0.5),
+            check("Speech energy", f"{energy:.4f} RMS", energy > 0.005),
+            check("Delivered in pieces", f"{pieces} clips", pieces >= 2),
+            check("Ahead of playback, warmed", f"{pace:.2f}× realtime (cold {first_pace:.2f}×)", pace >= 1.0),
         ]
     if role == "reasoning":
         stage(f"Loading {item['name']}")
@@ -611,7 +655,7 @@ def execute(request):
             # The first exchange is the one that feels slowest, so the models a spoken turn needs
             # are loaded before anybody asks for them. Smallest first: they all have to fit at once.
             warmed = []
-            for role in ("asr", "embedding", "reasoning", "tts"):
+            for role in (p.get("roles") or ["asr", "embedding", "reasoning", "tts"]):
                 ready = [item["id"] for item in CATALOG
                          if item["role"] == role and (manifest(item["id"]) or {}).get("qualified")]
                 if not ready:

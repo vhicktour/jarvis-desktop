@@ -36,3 +36,32 @@ export function firstSentence(text: string): [string, string] | undefined {
   const end = match.index + match[0].length
   return [text.slice(0, end).trim(), text.slice(end)]
 }
+
+/** How a spoken reply is produced. */
+export type ConversationEngine = 'pipeline' | 'duplex' | 'realtime'
+
+/** The one duplex profile installed here; the catalogue's others have no adapter yet. */
+export const DUPLEX_MODEL = 'lfm'
+
+/**
+ * An engine is offered only where what it needs has been observed working on this Mac. The duplex
+ * model has to have passed its own checks, and the cloud engine has to actually be connected.
+ */
+export function engineReady(
+  engine: ConversationEngine,
+  qualified: (id: string) => boolean,
+  connected: (id: string) => boolean,
+) {
+  if (engine === 'duplex') return qualified(DUPLEX_MODEL)
+  if (engine === 'realtime') return connected('openai-realtime')
+  return true
+}
+
+/** Which engine actually runs, given what is ready. Nothing silently falls back to the cloud. */
+export function engineInUse(
+  chosen: ConversationEngine,
+  qualified: (id: string) => boolean,
+  connected: (id: string) => boolean,
+): ConversationEngine {
+  return engineReady(chosen, qualified, connected) ? chosen : 'pipeline'
+}

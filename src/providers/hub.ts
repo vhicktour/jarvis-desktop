@@ -82,6 +82,21 @@ export class ProviderHub {
         invariant(response.ok, `Claude could not verify this credential (${response.status}).`)
         await this.host('credential.set', { account: 'claude-api', value: config.apiKey })
         this.status(id, 'connected', 'API access verified · Keychain protected')
+      } else if (id === 'openai-realtime') {
+        invariant(config.apiKey?.startsWith('sk-'), 'Enter an OpenAI API key.')
+        // Asking for the model itself checks access to it, not merely that the key parses.
+        const response = await fetch('https://api.openai.com/v1/models/gpt-realtime', {
+          headers: { authorization: `Bearer ${config.apiKey}` },
+          signal: AbortSignal.timeout(15_000),
+        })
+        invariant(
+          response.ok,
+          response.status === 404
+            ? 'This key does not have access to the realtime model.'
+            : `OpenAI could not verify this credential (${response.status}).`,
+        )
+        await this.host('credential.set', { account: 'openai-realtime', value: config.apiKey })
+        this.status(id, 'connected', 'Speech to speech · your voice leaves this Mac')
       } else if (id === 'google') {
         await this.google.connect(config.clientId, config.clientSecret)
         this.status(id, 'connected', 'Gmail, Calendar, and Drive · read-only access')

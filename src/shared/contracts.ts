@@ -181,6 +181,7 @@ export const Settings = z.object({
   reduceTransparency: z.boolean().default(false),
   speakReplies: z.boolean().default(true),
   automaticEndpointing: z.boolean().default(false),
+  conversationEngine: z.enum(['pipeline', 'duplex', 'realtime']).default('pipeline'),
   handsFree: z.boolean().default(false),
   voice: z.string().default('bm_george'),
   voiceSpeed: z.number().min(0.7).max(1.4).default(1),
@@ -264,6 +265,7 @@ export type Routine = z.infer<typeof Routine>
 export type ConnectionId =
   | 'codex'
   | 'claude'
+  | 'openai-realtime'
   | 'automation'
   | 'apple-calendar'
   | 'apple-reminders'
@@ -428,6 +430,7 @@ export const Command = z.discriminatedUnion('type', [
     id: z.enum([
       'codex',
       'claude',
+      'openai-realtime',
       'automation',
       'apple-calendar',
       'apple-reminders',

@@ -1,5 +1,6 @@
 import { Headphones, Mic, Volume2 } from 'lucide-react'
 import { ENDPOINT_MODELS } from '../../../shared/turn'
+import { DUPLEX_MODEL, type ConversationEngine } from '../../../shared/speech'
 import { useJarvis } from '../state'
 import { Core } from '../Orb'
 import { Button, Group, Row, Toggle } from '../ui'
@@ -22,6 +23,40 @@ export function Voice() {
     (id) => !snapshot.models.some((model) => model.id === id && model.qualified),
   ).map((id) => snapshot.models.find((model) => model.id === id)?.name ?? id)
   const endpointing = snapshot.settings.automaticEndpointing
+  const duplex = snapshot.models.find((model) => model.id === DUPLEX_MODEL)
+  const realtime = snapshot.connections.find((c) => c.id === 'openai-realtime')
+  const engine = snapshot.settings.conversationEngine
+  const engines: {
+    id: ConversationEngine
+    name: string
+    detail: string
+    ready: boolean
+    blocked: string
+  }[] = [
+    {
+      id: 'pipeline',
+      name: 'Separate models',
+      detail: 'Hears you, thinks, then speaks. Always available.',
+      ready: true,
+      blocked: '',
+    },
+    {
+      id: 'duplex',
+      name: 'One voice model',
+      detail: `${duplex?.name ?? 'A speech-to-speech model'} answers your voice directly, without transcribing it first.`,
+      ready: !!duplex?.qualified,
+      blocked: duplex
+        ? `${duplex.name} has not passed its checks on this Mac yet.`
+        : 'No speech-to-speech model is installed.',
+    },
+    {
+      id: 'realtime',
+      name: 'OpenAI Realtime',
+      detail: 'The fastest and the only one that sends your voice off this Mac.',
+      ready: realtime?.status === 'connected',
+      blocked: 'Connect OpenAI Realtime in Connections first.',
+    },
+  ]
   return (
     <>
       <div className="voice-card">
@@ -78,6 +113,29 @@ export function Voice() {
             void command({ type: 'settings.update', patch: { speakReplies } })
           }}
         />
+      </Group>
+      <Group title="How a reply is made">
+        {engines.map((option) => (
+          <Row
+            key={option.id}
+            title={option.name}
+            description={option.ready ? option.detail : option.blocked}
+          >
+            <Button
+              variant={engine === option.id ? 'primary' : 'secondary'}
+              busy={busy.has('settings.update')}
+              isDisabled={!option.ready || engine === option.id}
+              onPress={() => {
+                void command({
+                  type: 'settings.update',
+                  patch: { conversationEngine: option.id },
+                })
+              }}
+            >
+              {engine === option.id ? 'In use' : option.ready ? 'Use this' : 'Unavailable'}
+            </Button>
+          </Row>
+        ))}
       </Group>
       <Group title="Your microphone">
         <Row

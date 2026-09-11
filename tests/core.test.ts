@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
-import { spoken, firstSentence } from '../src/shared/speech'
+import { spoken, firstSentence, engineReady, engineInUse, DUPLEX_MODEL } from '../src/shared/speech'
 import { Store } from '../src/core/store'
 import { TaskEngine, type TaskExecutor, type TaskRun } from '../src/core/tasks'
 import { hash, now, uid } from '../src/core/util'
@@ -1031,6 +1031,45 @@ test('a runtime that answers and then leaves quietly is reported, not treated as
   assert.match(models.failure!, /stopped on its own \(exit 0\)/)
   assert.equal(models.process, undefined)
   rmSync(dir, { recursive: true, force: true })
+})
+
+test('an engine is offered only where what it needs has been observed working', () => {
+  const nothing = () => false
+  const all = () => true
+  // The separate models are always there; they are what everything else falls back to.
+  assert.equal(engineReady('pipeline', nothing, nothing), true)
+  assert.equal(engineReady('duplex', nothing, all), false, 'an unqualified model was offered')
+  assert.equal(
+    engineReady('duplex', (id) => id === DUPLEX_MODEL, nothing),
+    true,
+  )
+  assert.equal(
+    engineReady('realtime', all, nothing),
+    false,
+    'a cloud engine was offered unconnected',
+  )
+  assert.equal(
+    engineReady('realtime', nothing, (id) => id === 'openai-realtime'),
+    true,
+  )
+})
+
+test('an engine that is not ready falls back to local, never to the cloud', () => {
+  const nothing = () => false
+  // A chosen engine whose model was removed must not quietly start sending audio to OpenAI.
+  assert.equal(
+    engineInUse('duplex', nothing, () => true),
+    'pipeline',
+  )
+  assert.equal(engineInUse('realtime', nothing, nothing), 'pipeline')
+  assert.equal(
+    engineInUse('duplex', (id) => id === DUPLEX_MODEL, nothing),
+    'duplex',
+  )
+  assert.equal(
+    engineInUse('realtime', nothing, (id) => id === 'openai-realtime'),
+    'realtime',
+  )
 })
 
 test('what is spoken is the words, not the marks that were meant for the eye', () => {
