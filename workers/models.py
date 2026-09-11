@@ -35,7 +35,7 @@ QUALIFY_KEY = "ready when you are"
 # Synthesis is not bit-identical between renders, so endpointing is judged over several takes.
 QUALIFY_TAKES = 3
 # Roles this worker has a real load path for. Anything else cannot be installed or checked.
-RUNNABLE_ROLES = {"asr", "tts", "reasoning", "embedding", "vad", "turn", "vision"}
+RUNNABLE_ROLES = {"asr", "tts", "reasoning", "embedding", "vad", "turn", "vision", "duplex"}
 
 def send(value):
     data = json.dumps(value, ensure_ascii=False, allow_nan=False)
@@ -109,6 +109,12 @@ def load(model_id, role):
     elif role == "embedding":
         from mlx_embeddings.utils import load as load_embeddings
         model = load_embeddings(path)
+    elif role == "duplex":
+        # Speech to speech in one model: it hears the recording and answers with audio, so a turn
+        # never passes through transcription, reasoning and synthesis as three separate loads.
+        from mlx_audio.sts.utils import load as load_sts
+        from mlx_audio.sts.models.lfm_audio import LFM2AudioProcessor
+        model = (load_sts(path), LFM2AudioProcessor.from_pretrained(path))
     else:
         raise ValueError("This capability requires device qualification before activation.")
     RESIDENT[key] = model
@@ -167,6 +173,58 @@ def synthesize(text, voice, speed, cancelled=None):
     if not chunks:
         raise ValueError("No speech was generated.")
     return np.concatenate(chunks), rate
+
+# The codec runs at 12.5 Hz, so six codes is about half a second of speech: small enough to reach
+# the speaker quickly, and the shortest piece worth handing over on its own. The decoder needs the
+# codes before a piece to reconstruct its opening cleanly — decoded without them, every seam is a
+# step three times larger than any the model itself produces, which is audible as a click.
+DUPLEX_CHUNK = 6
+DUPLEX_LEAD = 8
+
+def duplex_reply(path, instructions=None, history=None, cancelled=None, audio=None):
+    """Hear a recording and answer aloud, handing over each piece of the answer as it is made."""
+    import numpy as np, soundfile as sf
+    import mlx.core as mx
+    from mlx_audio.sts.models.lfm_audio import ChatState, LFMModality
+    model, processor = load("lfm", "duplex")
+    heard, rate = sf.read(path, dtype="float32")
+    if heard.ndim > 1:
+        heard = heard.mean(axis=1)
+    state = ChatState(processor)
+    if instructions:
+        state.new_turn("system"); state.add_text(instructions[:4000]); state.end_turn()
+    for turn in (history or [])[-8:]:
+        role = "assistant" if turn.get("role") == "assistant" else "user"
+        state.new_turn(role); state.add_text(str(turn.get("text", ""))[:2000]); state.end_turn()
+    state.new_turn("user"); state.add_audio(mx.array(heard), rate); state.end_turn()
+    state.new_turn("assistant")
+
+    codes, spoken_to = [], 0
+    said = []
+
+    def emit(upto):
+        nonlocal spoken_to
+        lead = max(0, spoken_to - DUPLEX_LEAD)
+        wave = processor.decode_audio(mx.stack(codes[lead:upto], axis=-1)[None])
+        samples = np.asarray(mx.reshape(wave, (-1,)), dtype=np.float32)
+        per = len(samples) // (upto - lead)
+        samples = samples[(spoken_to - lead) * per:]
+        spoken_to = upto
+        audio(str(write_audio(samples, model.sample_rate)), len(samples) / model.sample_rate)
+
+    for token, modality in model.generate_from_chat_state(state, mode="interleaved", max_new_tokens=600):
+        if cancelled and cancelled():
+            raise ValueError("Cancelled.")
+        if int(modality) == int(LFMModality.AUDIO_OUT):
+            codes.append(mx.reshape(token, (-1,)))
+            if audio and len(codes) - spoken_to >= DUPLEX_CHUNK:
+                emit(len(codes))
+        else:
+            said.append(int(mx.reshape(token, (-1,))[0]))
+    if audio and len(codes) > spoken_to:
+        emit(len(codes))
+    text = processor.decode_text(said) if said else ""
+    return re.sub(r"<\|[^|]*\|>", "", text).strip(), len(codes) / 12.5
 
 def write_audio(samples, rate):
     import soundfile as sf
@@ -543,6 +601,12 @@ def execute(request):
                 release(key)
             shutil.rmtree(MODELS / model_id, ignore_errors=True)
             result = True
+        elif method == "duplex":
+            said, seconds = duplex_reply(
+                bounded_audio(p["path"]), p.get("instructions"), p.get("history"), cancelled,
+                lambda clip, duration: event("duplex.audio", {"requestId": request_id, "conversationId": p.get("conversationId"), "path": clip, "duration": duration}),
+            )
+            result = {"text": said, "duration": seconds}
         elif method == "models.warm":
             # The first exchange is the one that feels slowest, so the models a spoken turn needs
             # are loaded before anybody asks for them. Smallest first: they all have to fit at once.
