@@ -1,0 +1,39 @@
+{
+  "generatedAt": "2026-09-11T00:35:32.291Z",
+  "profile": "/private/tmp/jarvis-native-qa2",
+  "microphoneRouteTested": false,
+  "scope": "The wake model is asked about three rendered fixtures over three takes: the name, a sentence that is not the name, and silence. The lowest take decides, as it does for endpointing.",
+  "model": {
+    "id": "openwakeword",
+    "role": "wake",
+    "revision": "93d1bd6f4f48750cb6a76206ce5bd92d846820c8",
+    "qualified": true,
+    "checks": [
+      {
+        "label": "Score in range",
+        "value": "0.986, 0.971, 0.988",
+        "passed": true
+      },
+      {
+        "label": "The name reaches 0.5",
+        "value": "0.986, 0.971, 0.988 · lowest 0.971",
+        "passed": true
+      },
+      {
+        "label": "Other speech never wakes",
+        "value": "3 of 3",
+        "passed": true
+      },
+      {
+        "label": "Silence never wakes",
+        "value": "3 of 3",
+        "passed": true
+      }
+    ],
+    "elapsedSeconds": 7.96,
+    "detail": "Open Wake Word passed 4 checks on this Mac in 8.0 s.",
+    "name": "Open Wake Word",
+    "repository": "harvestsu/openwakeword-onnx"
+  },
+  "elapsedSeconds": 7.963
+}
