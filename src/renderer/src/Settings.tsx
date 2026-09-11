@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import {
   Activity,
@@ -46,6 +46,13 @@ const descriptions: Record<string, string> = {
 export function Settings() {
   const { section, setSection, snapshot } = useJarvis()
   const selected = sections.find((s) => s.id === section) ?? sections[0]
+  // One scroll container serves every section. Without this, arriving at a shorter section
+  // from a scrolled taller one leaves it parked past the end, showing an empty panel that
+  // only scrolling back up explains — and nobody scrolls up a page that looks blank.
+  const scroll = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    scroll.current?.scrollTo({ top: 0 })
+  }, [selected.id])
   const pages: Record<string, ReactNode> = {
     general: <General />,
     voice: <Voice />,
@@ -114,7 +121,7 @@ export function Settings() {
             </div>
           </div>
         </header>
-        <div className="settings-scroll scroll-area">
+        <div className="settings-scroll scroll-area" ref={scroll}>
           <AnimatePresence mode="wait">
             <motion.div
               key={selected.id}

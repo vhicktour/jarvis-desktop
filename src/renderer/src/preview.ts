@@ -1,5 +1,5 @@
 import { emptySnapshot } from '../../shared/defaults'
-import { withVoiceDependencies } from '../../shared/turn'
+import { withListeningDependencies } from '../../shared/turn'
 import type { AppEvent, AppSnapshot, Command, JarvisAPI, OverlayForm } from '../../shared/contracts'
 
 /** Development-only design surface. Never loaded by the installed application. */
@@ -55,7 +55,11 @@ export function previewAPI(): JarvisAPI {
         // The service settles the same dependency, so the design surface has to show it too.
         Object.assign(
           snapshot.settings,
-          withVoiceDependencies({ ...snapshot.settings, ...command.patch }),
+          // The service settles every listening dependency, not only the voice ones, so the
+          // design surface has to as well or it can show a combination the service refuses.
+          withListeningDependencies({ ...snapshot.settings, ...command.patch }, (id) =>
+            snapshot.models.some((model) => model.id === id && model.qualified),
+          ),
         )
       else if (command.type === 'overlay.form') emit({ type: 'overlay', form: command.form })
       else if (command.type === 'settings.open') {

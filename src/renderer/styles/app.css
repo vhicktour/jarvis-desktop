@@ -854,7 +854,10 @@ textarea::placeholder {
   background: #091823f3;
   position: relative;
   border-radius: 14px;
-  overflow: hidden;
+  /* clip, not hidden: a hidden box is still a scroll container, so focusing a control below
+     the fold lets the browser scroll the sidebar and header away with no way to bring them
+     back. clip creates no scroll container at all, so only .settings-scroll ever moves. */
+  overflow: clip;
   border: 1px solid #c9e7f21e;
 }
 .settings-sidebar {
@@ -1648,7 +1651,7 @@ html[data-reduce-motion='true'] *::after {
   height: min(710px, calc(100vh - 120px));
   border-radius: 14px;
   box-shadow: 0 30px 100px #0007;
-  overflow: hidden;
+  overflow: clip;
 }
 .preview-orb {
   position: absolute;
