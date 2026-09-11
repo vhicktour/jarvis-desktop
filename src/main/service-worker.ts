@@ -36,6 +36,16 @@ import { DUPLEX_MODEL, engineInUse, engineReady, spoken } from '../shared/speech
 import {
   HANDS_FREE_SETTLE_MS,
   SPEECH_LEVEL,
+  WAKE_QUIET_SECONDS,
+  bargeInReady,
+  isInterruption,
+  isNameSpoken,
+  nameWakeReady,
+  shouldScoreWake,
+  shouldTranscribeForName,
+  shouldWatchForWake,
+  wakeReady,
+  withListeningDependencies,
   endpointingReady,
   handsFreeReady,
   shouldReopenMicrophone,
@@ -293,6 +303,11 @@ async function init(input: any) {
     )
       background(clearContext())
   }, 5000).unref()
+  // The microphone opens and closes to match the phase. Converging on a timer rather than
+  // hooking every transition means a path nobody thought of cannot leave it open.
+  setInterval(() => {
+    if (!closing) background(reviewWatch())
+  }, 1000).unref()
 }
 function modelEvent(message: any) {
   if (
@@ -330,6 +345,127 @@ function modelEvent(message: any) {
     notice(
       `${models.records.find((m) => m.id === message.params.id)?.name ?? 'Model'}: ${message.params.stage}`,
     )
+}
+/**
+ * Listening for the name.
+ *
+ * The microphone is held open without a file behind it, so nothing reaches disk until a turn
+ * actually begins. Two ways of hearing the name share that one open microphone: the phrase
+ * model, which is asked about short snapshots and never transcribes; and — only if the person
+ * switched it on — a burst short enough to be one word, which is transcribed to check.
+ */
+let watching = false
+let watchGeneration = 0
+let scoreBusy = false
+let lastScoredAt = 0
+let lastWatchSpeechAt = 0
+let burstStartedAt = 0
+let bargeSpeechSeconds = 0
+let lastBargeAt = 0
+let playbackLevel = 0
+
+/** Opens or closes the listening microphone to match what the settings and phase allow. */
+async function reviewWatch() {
+  const wanted = shouldWatchForWake({
+    wakeWord: state.settings.wakeWord,
+    phase: state.voice.phase,
+    locked: state.diagnostics.locked,
+    closing,
+    bargeIn: state.settings.bargeIn,
+  })
+  if (wanted === watching) return
+  if (!wanted) {
+    watching = false
+    watchGeneration++
+    state.voice.watching = false
+    publish(false)
+    await native('listen.stop', { generation: state.voice.generation })
+    return
+  }
+  if (state.permissions.microphone !== 'granted') return
+  try {
+    const opened = await native('listen.start', { generation: state.voice.generation + 1 })
+    // Without echo cancellation on this route, a reply would interrupt itself.
+    if (state.voice.phase === 'speaking' && !opened.voiceProcessing) {
+      await native('listen.stop', { generation: state.voice.generation })
+      return
+    }
+    watching = true
+    watchGeneration++
+    state.voice.generation = opened.generation ?? state.voice.generation
+    state.voice.watching = true
+    lastScoredAt = 0
+    lastWatchSpeechAt = 0
+    burstStartedAt = 0
+    bargeSpeechSeconds = 0
+    publish(false)
+  } catch (error) {
+    notice(`The microphone could not stay open for your name. ${safeError(error)}`, 'error')
+  }
+}
+/** A snapshot of what the open microphone is holding, scored and then deleted. */
+async function askTheWakeModel(generation: number) {
+  if (scoreBusy) return
+  scoreBusy = true
+  let path: string | undefined
+  try {
+    const audio = await native('audio.preview')
+    path = audio.path
+    const result = await models.request('wake', { path })
+    if (generation !== watchGeneration || !watching) return
+    if (result.awake) await wake('“Hey Jarvis”')
+  } catch {
+    // A wake check that fails is not worth interrupting anybody for; the next one will run.
+  } finally {
+    scoreBusy = false
+    if (path) await native('ephemeral.delete', { path })
+  }
+}
+/**
+ * A burst short enough to be one word, transcribed to see whether it was the name. The length
+ * gate is applied before this runs, so ordinary conversation never reaches recognition.
+ */
+async function askWhetherItWasTheName(generation: number) {
+  if (scoreBusy) return
+  scoreBusy = true
+  let path: string | undefined
+  try {
+    const audio = await native('audio.preview')
+    path = audio.path
+    const heard = await models.request('asr', {
+      path,
+      model: models.qualified('parakeet') ? 'parakeet' : 'whisper',
+    })
+    if (generation !== watchGeneration || !watching) return
+    if (isNameSpoken(heard.text ?? '')) await wake('your name')
+  } catch {
+    // Same as the phrase model: a failed check waits for the next burst rather than complaining.
+  } finally {
+    scoreBusy = false
+    if (path) await native('ephemeral.delete', { path })
+  }
+}
+/** The person spoke over the reply: stop it and listen to them instead. */
+async function interruptReply() {
+  if (state.voice.phase !== 'speaking') return
+  watching = false
+  watchGeneration++
+  state.voice.watching = false
+  endHandsFree()
+  conversation?.abort()
+  await stopSpeech()
+  notice('Interrupted.')
+  await toggleVoice()
+}
+/** The name was heard: close the listening microphone and open a real turn behind it. */
+async function wake(how: string) {
+  watching = false
+  watchGeneration++
+  state.voice.watching = false
+  notice(`Heard ${how}.`)
+  // audio.start takes the tap over with the rolling history in front of the file, so the
+  // words already in the air when the name landed are inside the recording.
+  await toggleVoice()
 }
 /** A hands-free session reopens the microphone after each reply, until something ends it. */
 function endHandsFree(reason?: string) {
@@ -1000,6 +1136,7 @@ async function command(value: any): Promise<unknown> {
   }
   if (value.type === 'system.suspend') {
     state.diagnostics.locked = true
+    await reviewWatch()
     tasks.suspend(true)
     endHandsFree()
     conversation?.abort()
@@ -1023,8 +1160,11 @@ async function command(value: any): Promise<unknown> {
       publish()
       return state
     case 'settings.update': {
-      // Hands-free cannot outlive the endpointing that closes the microphone for it.
-      const settings = withVoiceDependencies(Settings.parse({ ...store.settings(), ...c.patch }))
+      // Every listening capability is cleared when the model it rests on is gone.
+      const settings = withListeningDependencies(
+        Settings.parse({ ...store.settings(), ...c.patch }),
+        (id) => models.qualified(id),
+      )
       // Turning a capability on requires its checks to have passed here, not merely to be installed.
       // The patch is validated rather than the merge, so a shut gate cannot block unrelated writes.
       invariant(
@@ -1050,6 +1190,18 @@ async function command(value: any): Promise<unknown> {
         !c.patch.handsFree || handsFreeReady(settings, (id) => models.qualified(id)),
         'Switch on “Finish a turn naturally” first. Without it nothing closes the microphone, so Jarvis would never hear the end of a thought.',
       )
+      invariant(
+        !c.patch.wakeWord || wakeReady((id) => models.qualified(id)),
+        'Open Wake Word needs to pass its check in Settings → Local models before Jarvis can hear its name.',
+      )
+      invariant(
+        !c.patch.wakeOnName || (settings.wakeWord && nameWakeReady((id) => models.qualified(id))),
+        'Switch on “Hey Jarvis” first, and check Parakeet in Local models. The bare name is heard by the same open microphone.',
+      )
+      invariant(
+        !c.patch.bargeIn || bargeInReady((id) => models.qualified(id)),
+        'Silero VAD needs to pass its check in Settings → Local models before Jarvis can tell your voice from its own.',
+      )
       if (settings.privacyMode === 'local-only')
         invariant(
           !store
@@ -1063,6 +1215,8 @@ async function command(value: any): Promise<unknown> {
         )
       store.setSetting('preferences', settings)
       if (!settings.handsFree) endHandsFree()
+      state.settings = settings
+      background(reviewWatch())
       publish()
       return settings
     }
@@ -1425,12 +1579,74 @@ parent.on('message', async ({ data: message }: { data: any }) => {
       } else if (action === 'finish') background(toggleVoice())
       else if (action === 'abandon') background(abandonTurn())
     }
+    // The same level events, arriving while the microphone is open for the name rather than
+    // for a turn. Nothing here is recorded; the decisions are which question to ask about it.
+    if (
+      method === 'audio.level' &&
+      watching &&
+      params.generation === state.voice.generation &&
+      state.voice.phase !== 'listening'
+    ) {
+      const level = Math.max(0, Math.min(1, params.level))
+      const speaking = level > SPEECH_LEVEL
+      if (speaking) {
+        if (!burstStartedAt) burstStartedAt = params.elapsed
+        lastWatchSpeechAt = params.elapsed
+      }
+      if (Date.now() - lastLevelUpdate > 65) {
+        state.voice.level = level
+        lastLevelUpdate = Date.now()
+        publish(false)
+      }
+      const quietSeconds = lastWatchSpeechAt ? params.elapsed - lastWatchSpeechAt : params.elapsed
+      if (state.voice.phase === 'speaking') {
+        // Interrupting: speech has to beat the reply, and keep beating it.
+        bargeSpeechSeconds = speaking
+          ? bargeSpeechSeconds + Math.max(0, params.elapsed - lastBargeAt)
+          : 0
+        lastBargeAt = params.elapsed
+        if (
+          isInterruption({
+            speechSeconds: bargeSpeechSeconds,
+            elapsed: params.elapsed,
+            level,
+            playbackLevel,
+          })
+        ) {
+          bargeSpeechSeconds = 0
+          background(interruptReply())
+        }
+      } else if (
+        // The bare name, read from a burst the length gate has already accepted.
+        state.settings.wakeOnName &&
+        burstStartedAt &&
+        shouldTranscribeForName({
+          burstSeconds: lastWatchSpeechAt - burstStartedAt,
+          quietSeconds,
+          busy: scoreBusy,
+        })
+      ) {
+        const generation = watchGeneration
+        burstStartedAt = 0
+        background(askWhetherItWasTheName(generation))
+      } else if (
+        state.settings.wakeWord &&
+        shouldScoreWake({ level, quietSeconds, sinceScoredMs: Date.now() - lastScoredAt })
+      ) {
+        lastScoredAt = Date.now()
+        background(askTheWakeModel(watchGeneration))
+      }
+      if (!speaking && quietSeconds > WAKE_QUIET_SECONDS) burstStartedAt = 0
+    }
+    if (method === 'speech.level' && watching)
+      playbackLevel = Math.max(0, Math.min(1, params.level))
     if (method === 'speech.finished' && params.generation === state.voice.generation) {
       const reopen = resumeGeneration === params.generation
       state.voice.phase = 'off'
       state.voice.level = 0
       publish(false)
       if (reopen) resumeListening()
+      else background(reviewWatch())
     }
     if (method === 'audio.error') notice(params.message, 'error')
     return

@@ -59,6 +59,13 @@ export function useActivity() {
       tone: 'active',
       active: true,
     }
+  if (snapshot.voice.watching)
+    return {
+      label: 'Listening for your name',
+      mode: 'breathing' as OrbState,
+      tone: 'neutral',
+      active: false,
+    }
   return {
     label: 'Ready when you are',
     mode: 'breathing' as OrbState,

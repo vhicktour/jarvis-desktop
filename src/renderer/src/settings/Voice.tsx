@@ -6,13 +6,14 @@ import { Core } from '../Orb'
 import { Button, Group, Row, Toggle } from '../ui'
 
 /** What the microphone is doing, in the words the orb uses for the same states. */
-function microphoneStatus(voice: { phase: string; handsFree: boolean }) {
+function microphoneStatus(voice: { phase: string; handsFree: boolean; watching: boolean }) {
   if (voice.phase === 'listening')
     return voice.handsFree
       ? 'HANDS-FREE · LISTENING · CLICK THE ORB TO FINISH'
       : 'LISTENING · CLICK THE ORB TO FINISH'
   if (voice.phase === 'speaking') return 'SPEECH PLAYBACK · CLICK THE ORB TO INTERRUPT'
   if (voice.handsFree) return 'HANDS-FREE · THE MICROPHONE OPENS AGAIN AFTER THIS REPLY'
+  if (voice.watching) return 'LISTENING FOR YOUR NAME · NOTHING IS BEING RECORDED'
   return 'MICROPHONE IDLE'
 }
 
