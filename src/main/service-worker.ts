@@ -285,6 +285,14 @@ async function init(input: any) {
         (id) => models.qualified(id),
         (id) => providers.connections.some((x) => x.id === id && x.status === 'connected'),
       )
+      // Said here rather than at boot: what is qualified is only known once the runtime has
+      // answered, and a diagnostic that reports "qualified: false" about a qualified model is
+      // worse than none at all.
+      note(
+        state.settings.wakeWord
+          ? `Wake word is on (${WAKE_MODEL} qualified: ${models.qualified(WAKE_MODEL)}). Engine: ${engine}.`
+          : `Wake word is off in Settings, so nothing is listening for the name. Engine: ${engine}.`,
+      )
       return models
         .warm(engine === 'duplex' ? ['duplex', 'asr'] : undefined)
         .then(() => vault.restore())
@@ -305,13 +313,6 @@ async function init(input: any) {
     )
       background(clearContext())
   }, 5000).unref()
-  // Say at startup whether anything is listening at all. A switch left off and a wake that never
-  // fires look identical from the outside, and only one of them is a fault.
-  note(
-    state.settings.wakeWord
-      ? `Wake word is on (${WAKE_MODEL} qualified: ${models.qualified(WAKE_MODEL)}).`
-      : 'Wake word is off in Settings, so nothing is listening for the name.',
-  )
   // The microphone opens and closes to match the phase. Converging on a timer rather than
   // hooking every transition means a path nobody thought of cannot leave it open.
   setInterval(() => {
