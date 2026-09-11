@@ -111,6 +111,10 @@ final class AudioHistory {
     // Sentences of one reply, waiting their turn. A reply spoken in pieces is still one utterance,
     // so it keeps one generation and reports finishing once, when the last piece has played.
     var playbackQueue: [URL] = []
+    /** Whether Apple's echo cancellation is actually on, which is not the same as having asked. */
+    var voiceProcessing = false
+    /** Listening with nowhere to write: the rolling history only, so nothing reaches disk. */
+    var listening = false
     var playbackMeter: Timer?
     var audioHistory: AudioHistory?
     var generation = 0
@@ -142,7 +146,7 @@ final class AudioHistory {
     }
     func execute(_ method: String, _ p: [String: Any]) async throws -> Any {
         switch method {
-        case "ping": return ["version": 1, "permissions": permissions(), "reduceMotion": NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, "reduceTransparency": NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency]
+        case "ping": return ["version": 1, "permissions": permissions(), "voiceProcessing": voiceProcessing, "listening": listening, "reduceMotion": NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, "reduceTransparency": NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency]
         case "permissions": return permissions()
         case "permission.request":
             switch p["permission"] as? String {
@@ -155,26 +159,33 @@ final class AudioHistory {
             }; return permissions()
         case "audio.start":
             guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else { throw fail("Allow microphone access in Settings first.") }
-            if audio.isRunning { return true }
+            if audio.isRunning && recording != nil { return true }
+            // Already listening: take the tap over and start the file without stopping the engine,
+            // so a turn that begins on a wake word does not lose the words already in the air.
+            let takeover = listening
+            let carried = takeover ? audioHistory?.snapshot() ?? [] : []
             generation = p["generation"] as? Int ?? generation + 1
-            let input = audio.inputNode; let format = input.outputFormat(forBus: 0)
-            guard format.sampleRate > 0 && format.channelCount > 0 else { throw fail("No microphone is available.") }
             let path = ephemeral.appendingPathComponent(UUID().uuidString + ".wav")
-            let file = try AVAudioFile(forWriting: path, settings: format.settings)
-            recording = file; recordPath = path
-            let history = AudioHistory(sampleRate: format.sampleRate)
-            audioHistory = history
-            var frames: Int64 = 0; let session = generation
-            input.installTap(onBus: 0, bufferSize: 2048, format: format) { buffer, _ in
-                history.append(buffer)
-                do { try file.write(from: buffer) } catch { event("audio.error", ["message": "The microphone recording could not be written.", "generation": session]) }
-                frames += Int64(buffer.frameLength)
-                guard let samples = buffer.floatChannelData?[0] else { return }
-                var energy: Float = 0; for i in 0..<Int(buffer.frameLength) { energy += samples[i] * samples[i] }
-                let rms = sqrt(energy / Float(max(buffer.frameLength, 1)))
-                event("audio.level", ["level": min(1, Double(rms) * 7), "generation": session, "elapsed": Double(frames) / format.sampleRate])
+            let started = try openTap(writeTo: path, preRoll: carried)
+            recordPath = path
+            listening = false
+            return ["sampleRate": started.sampleRate, "generation": generation, "voiceProcessing": voiceProcessing, "preRoll": started.preRoll]
+        case "listen.start":
+            guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else { throw fail("Allow microphone access in Settings first.") }
+            if audio.isRunning && listening { return ["sampleRate": audioHistory?.sampleRate ?? 0, "generation": generation, "voiceProcessing": voiceProcessing] }
+            guard recording == nil else { throw fail("A recording is already in progress.") }
+            generation = p["generation"] as? Int ?? generation + 1
+            let opened = try openTap(writeTo: nil, preRoll: [])
+            listening = true
+            return ["sampleRate": opened.sampleRate, "generation": generation, "voiceProcessing": voiceProcessing]
+        case "listen.stop":
+            // Safe when nothing is listening: a caller should not have to track that for us.
+            if listening {
+                if audio.isRunning { audio.stop(); audio.inputNode.removeTap(onBus: 0) }
+                audioHistory = nil
+                listening = false
             }
-            audio.prepare(); try audio.start(); return ["sampleRate": format.sampleRate, "generation": generation]
+            return true
         case "audio.preview":
             guard audio.isRunning, let history = audioHistory else { throw fail("No active recording.") }
             let samples = history.snapshot()
@@ -187,12 +198,13 @@ final class AudioHistory {
             return ["path": path.path, "generation": generation]
         case "audio.stop":
             if audio.isRunning { audio.stop(); audio.inputNode.removeTap(onBus: 0) }
+            listening = false
             recording = nil
             audioHistory = nil
             guard let path = recordPath else { return ["path": NSNull()] }
             recordPath = nil; return ["path": path.path, "generation": generation]
         case "audio.discard":
-            if audio.isRunning { audio.stop(); audio.inputNode.removeTap(onBus: 0) }; recording = nil; audioHistory = nil
+            if audio.isRunning { audio.stop(); audio.inputNode.removeTap(onBus: 0) }; listening = false; recording = nil; audioHistory = nil
             if let path = recordPath { try? FileManager.default.removeItem(at: path) }; recordPath = nil; return true
         case "speech.stop": generation = p["generation"] as? Int ?? generation + 1; playbackMeter?.invalidate(); playbackMeter = nil; player?.stop(); player = nil; playbackQueue.removeAll(); playbackGenerations.removeAll(); speech.stopSpeaking(at: .immediate); return ["playing": false, "generation": generation]
         case "speech.status": return ["playing": player?.isPlaying ?? false, "speaking": speech.isSpeaking, "generation": generation, "outputRoute": outputRoute()]
@@ -350,6 +362,68 @@ final class AudioHistory {
             guard path.path.hasPrefix(ephemeral.path + "/") else { throw fail("This file is outside temporary storage.") }; try? FileManager.default.removeItem(at: path); return true
         default: throw fail("Unsupported native request: \(method)")
         }
+    }
+    struct TapStart { let sampleRate: Double; let preRoll: Bool }
+    /**
+     * One microphone tap, with or without a file behind it. Apple's echo cancellation is asked for
+     * once, before anything reads the format — it can change the sample rate and channel count, so
+     * everything below is derived after it, not before.
+     */
+    func openTap(writeTo path: URL?, preRoll carried: [Float]) throws -> TapStart {
+        let input = audio.inputNode
+        if !voiceProcessing && !audio.isRunning {
+            do {
+                try input.setVoiceProcessingEnabled(true)
+                try audio.outputNode.setVoiceProcessingEnabled(true)
+                voiceProcessing = true
+            } catch {
+                // Some routes refuse it. Say so rather than assume, so barge-in can stay shut.
+                voiceProcessing = false
+            }
+        }
+        let format = input.outputFormat(forBus: 0)
+        guard format.sampleRate > 0 && format.channelCount > 0 else { throw fail("No microphone is available.") }
+        var file: AVAudioFile?
+        var seeded = false
+        if let path {
+            let opened = try AVAudioFile(forWriting: path, settings: format.settings)
+            // Words already in the air when the turn began belong to it. The history keeps one
+            // channel, so it is written to every channel the file has rather than only to a mono
+            // one — a microphone that is not mono is the ordinary case, not the exception.
+            if !carried.isEmpty,
+               let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(carried.count)),
+               let channels = buffer.floatChannelData {
+                buffer.frameLength = AVAudioFrameCount(carried.count)
+                carried.withUnsafeBufferPointer { source in
+                    for channel in 0..<Int(format.channelCount) {
+                        channels[channel].update(from: source.baseAddress!, count: carried.count)
+                    }
+                }
+                if (try? opened.write(from: buffer)) != nil { seeded = true }
+            }
+            file = opened
+            recording = opened
+        } else {
+            recording = nil
+        }
+        let history = AudioHistory(sampleRate: format.sampleRate)
+        audioHistory = history
+        var frames: Int64 = 0
+        let session = generation
+        input.removeTap(onBus: 0)
+        input.installTap(onBus: 0, bufferSize: 2048, format: format) { buffer, _ in
+            history.append(buffer)
+            if let file {
+                do { try file.write(from: buffer) } catch { event("audio.error", ["message": "The microphone recording could not be written.", "generation": session]) }
+            }
+            frames += Int64(buffer.frameLength)
+            guard let samples = buffer.floatChannelData?[0] else { return }
+            var energy: Float = 0; for i in 0..<Int(buffer.frameLength) { energy += samples[i] * samples[i] }
+            let rms = sqrt(energy / Float(max(buffer.frameLength, 1)))
+            event("audio.level", ["level": min(1, Double(rms) * 7), "generation": session, "elapsed": Double(frames) / format.sampleRate])
+        }
+        if !audio.isRunning { audio.prepare(); try audio.start() }
+        return TapStart(sampleRate: format.sampleRate, preRoll: seeded)
     }
     func playableURL(_ path: String) throws -> URL {
         let url = URL(fileURLWithPath: path).standardizedFileURL
