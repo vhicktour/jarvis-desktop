@@ -754,7 +754,8 @@ def execute(request):
             raise ValueError("Unsupported model request.")
         send({"version": 1, "id": request_id, "result": result})
     except Exception as error:
-        send({"version": 1, "id": request_id, "error": str(error)[:1600]})
+        # Some exceptions stringify to nothing at all; the name is better than silence.
+        send({"version": 1, "id": request_id, "error": (str(error) or error.__class__.__name__)[:1600]})
     finally:
         CANCELLED.discard(request_id)
         PENDING.discard(request_id)

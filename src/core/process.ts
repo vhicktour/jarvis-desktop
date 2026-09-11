@@ -43,12 +43,14 @@ export class JsonProcess extends EventEmitter {
           if (request && !message.method) {
             clearTimeout(request.timer)
             this.pending.delete(String(message.id))
-            if (message.error || message.ok === false)
+            // A reply carrying an error key failed, even when the text of it is empty: Python's
+            // StopIteration stringifies to nothing, and treating that as success resolves the
+            // request with undefined and hides the failure from whoever asked.
+            if (message.error !== undefined || message.ok === false)
               request.reject(
                 new Error(
-                  typeof message.error === 'string'
-                    ? message.error
-                    : (message.error?.message ?? 'Worker request failed.'),
+                  (typeof message.error === 'string' ? message.error : message.error?.message) ||
+                    'The worker failed without saying why.',
                 ),
               )
             else request.resolve(message.result ?? message.value)

@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
+import { JsonProcess } from '../src/core/process'
 import { spoken, firstSentence, engineReady, engineInUse, DUPLEX_MODEL } from '../src/shared/speech'
 import { Store } from '../src/core/store'
 import { TaskEngine, type TaskExecutor, type TaskRun } from '../src/core/tasks'
@@ -1164,6 +1165,33 @@ test('a long profile path does not send speech to a directory that is not there'
   assert.equal(realpathSync(chosen), realpathSync(deep), 'the link does not reach the real data')
   rmSync(dir, { recursive: true, force: true })
   rmSync(roomFor, { recursive: true, force: true })
+})
+
+test('a worker failure with nothing to say is still a failure, not an empty success', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'jarvis-empty-'))
+  const script = join(dir, 'interpreter')
+  // Python's StopIteration stringifies to nothing, so a worker can report a real failure with an
+  // empty message. Resolving that as success hands the caller undefined and hides the error.
+  writeFileSync(
+    script,
+    [
+      '#!/bin/sh',
+      'while read -r line; do',
+      '  id=$(printf "%s" "$line" | sed -n \'s/.*"id":"\\([^"]*\\)".*/\\1/p\')',
+      '  [ -z "$id" ] && continue',
+      '  printf \'{"version":1,"id":"%s","error":""}\\n\' "$id"',
+      'done',
+    ].join('\n') + '\n',
+    { mode: 0o755 },
+  )
+  const worker = new JsonProcess(script, [])
+  await assert.rejects(
+    worker.request('anything', {}, 4000),
+    /failed without saying why/,
+    'an empty error resolved as though the request had succeeded',
+  )
+  await worker.stopAndWait()
+  rmSync(dir, { recursive: true, force: true })
 })
 
 test('a runtime that is slow to answer is asked again, not killed for being slow', async () => {
