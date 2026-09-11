@@ -8,6 +8,7 @@ import {
 } from 'node:fs'
 import { join } from 'node:path'
 import { JsonProcess } from './process'
+import { record } from './log'
 import { MODELS } from '../shared/defaults'
 import type { ModelRecord, QualificationResult } from '../shared/contracts'
 import { safeError } from './util'
@@ -115,14 +116,7 @@ export class Models {
    * written down. Bounded, because a log that fills the disk is its own failure.
    */
   private log(line: string) {
-    try {
-      const file = join(this.dataDir, 'runtime.log')
-      if ((statSync(file, { throwIfNoEntry: false })?.size ?? 0) > 64_000)
-        writeFileSync(file, '', { mode: 0o600 })
-      appendFileSync(file, `${new Date().toISOString()} ${line}\n`, { mode: 0o600 })
-    } catch {
-      /* Diagnostics must never be the reason the runtime cannot start. */
-    }
+    record(this.dataDir, line)
   }
   private explain(reason: string) {
     return [reason, ...this.diagnostics].join(' · ').slice(0, 600)

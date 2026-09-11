@@ -33,6 +33,7 @@ import {
 import { emptySnapshot } from '../shared/defaults'
 import { replyShape, spokenInstruction } from '../shared/reply'
 import { DUPLEX_MODEL, engineInUse, engineReady, spoken } from '../shared/speech'
+import { record } from '../core/log'
 import {
   HANDS_FREE_SETTLE_MS,
   SPEECH_LEVEL,
@@ -51,6 +52,7 @@ import {
   shouldReopenMicrophone,
   turnAction,
   withVoiceDependencies,
+  WAKE_MODEL,
 } from '../shared/turn'
 import { hash, invariant, now, safeError, uid } from '../core/util'
 
@@ -303,6 +305,13 @@ async function init(input: any) {
     )
       background(clearContext())
   }, 5000).unref()
+  // Say at startup whether anything is listening at all. A switch left off and a wake that never
+  // fires look identical from the outside, and only one of them is a fault.
+  note(
+    state.settings.wakeWord
+      ? `Wake word is on (${WAKE_MODEL} qualified: ${models.qualified(WAKE_MODEL)}).`
+      : 'Wake word is off in Settings, so nothing is listening for the name.',
+  )
   // The microphone opens and closes to match the phase. Converging on a timer rather than
   // hooking every transition means a path nobody thought of cannot leave it open.
   setInterval(() => {
@@ -363,6 +372,11 @@ let burstStartedAt = 0
 let bargeSpeechSeconds = 0
 let lastBargeAt = 0
 let playbackLevel = 0
+let blockedOnMicrophone = false
+/** Written down because a wake that never fires leaves nothing else behind to look at. */
+function note(line: string) {
+  record(config.dataDir, line)
+}
 
 /** Opens or closes the listening microphone to match what the settings and phase allow. */
 async function reviewWatch() {
@@ -375,6 +389,7 @@ async function reviewWatch() {
   })
   if (wanted === watching) return
   if (!wanted) {
+    note('Stopped listening for the wake word.')
     watching = false
     watchGeneration++
     state.voice.watching = false
@@ -382,9 +397,20 @@ async function reviewWatch() {
     await native('listen.stop', { generation: state.voice.generation })
     return
   }
-  if (state.permissions.microphone !== 'granted') return
+  if (state.permissions.microphone !== 'granted') {
+    // Every second would be noise; say it once, then again only if it changes.
+    if (!blockedOnMicrophone) {
+      blockedOnMicrophone = true
+      note(`Cannot listen for the wake word: microphone access is ${state.permissions.microphone}.`)
+    }
+    return
+  }
+  blockedOnMicrophone = false
   try {
     const opened = await native('listen.start', { generation: state.voice.generation + 1 })
+    note(
+      `Listening for the wake word (echo cancellation ${opened.voiceProcessing ? 'on' : 'off'}).`,
+    )
     // Without echo cancellation on this route, a reply would interrupt itself.
     if (state.voice.phase === 'speaking' && !opened.voiceProcessing) {
       await native('listen.stop', { generation: state.voice.generation })
@@ -412,10 +438,13 @@ async function askTheWakeModel(generation: number) {
     const audio = await native('audio.preview')
     path = audio.path
     const result = await models.request('wake', { path })
+    note(`Wake score ${Number(result?.score ?? 0).toFixed(3)}${result?.awake ? ' — woke' : ''}.`)
     if (generation !== watchGeneration || !watching) return
     if (result.awake) await wake('“Hey Jarvis”')
-  } catch {
-    // A wake check that fails is not worth interrupting anybody for; the next one will run.
+  } catch (error) {
+    // A wake check that fails is not worth interrupting anybody for, but it is worth recording:
+    // one that fails every time is indistinguishable from one that never hears the name.
+    note(`The wake check could not run: ${safeError(error)}`)
   } finally {
     scoreBusy = false
     if (path) await native('ephemeral.delete', { path })
