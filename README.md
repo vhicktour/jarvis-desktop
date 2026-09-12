@@ -4,6 +4,10 @@ A local-first Electron companion for macOS 26+ on Apple silicon.
 
 ![Jarvis running on macOS, showing its General settings and orb interface](docs/images/jarvis-settings.jpg)
 
+**Floating orb**
+
+![The standalone Jarvis orb listening for its wake name](docs/images/jarvis-orb.jpg)
+
 The floating orb keeps Jarvis within reach; Settings is the full window for voice, models, connections, and memory. This is a personal preview. Wake reliability, natural interruption, and local response latency are still being improved; see [verification status](verification/STATUS.md) for what has actually been tested.
 
 ## Development
