@@ -28,17 +28,34 @@ EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=1)
 RESIDENT_BUDGET = 4_500_000_000
 RESIDENT = {}
 RESIDENT_BYTES = {}
+# The reasoning model's prompt is prefilled once per exchange rather than once per turn: what every
+# turn begins with — persona and history — is kept as an exact cache snapshot, and a turn pays only
+# for its own words. Measured here: 2.0 s to the first token became 0.5 s. Snapshots are kept per
+# prompt, so enough are held for the prepared prefix to survive the turn that follows it.
+os.environ.setdefault("APC_CHECKPOINT_ENTRIES", "4")
+PREFIX_CACHE = None
 CATALOG = json.loads(Path(sys.argv[2]).read_text())
 # One fixed phrase renders every cross-model check, so results stay comparable between runs.
 QUALIFY_TEXT = "Good evening. I am Jarvis. Ready when you are."
 QUALIFY_KEY = "ready when you are"
+# The turn model is asked whether a thought has finished, so its check has to be a thought that
+# plainly finishes: a question. The greeting above ends on a handoff, and the model — rightly — hears
+# that as a turn still open, which had it scoring 0.26 to 0.64 against a bar of 0.65.
+TURN_TEXT = "What's the weather going to be like tomorrow, and should I take an umbrella?"
 # Synthesis is not bit-identical between renders, so endpointing is judged over several takes.
 QUALIFY_TAKES = 3
+# The turn model is judged over more, because a rendered voice sits near its decision boundary: the
+# same question came back at 0.57, 0.80 and 0.65 on consecutive renders, and 0.92 to 0.97 on others,
+# while real speech scored 0.84 to 0.94 and an unfinished thought 0.02 to 0.04.
+TURN_TAKES = 5
+# The bar the model's authors publish for a finished turn. Every render has to clear it.
+TURN_FLOOR = 0.5
 # A duplex model is asked something with one right answer, so hearing can be told from guessing.
 DUPLEX_QUESTION = "What is the capital of France?"
 DUPLEX_KEY = "paris"
-# Roles this worker has a real load path for. Anything else cannot be installed or checked.
-RUNNABLE_ROLES = {"asr", "tts", "reasoning", "embedding", "vad", "turn", "wake", "vision", "duplex"}
+# A role is not an adapter: other speech models need different processors and codecs.
+RUNNABLE_MODELS = {"parakeet", "kokoro", "qwen", "embedding", "whisper", "silero", "smart-turn", "openwakeword", "keyword", "ui-tars", "lfm"}
+RUNNABLE_ROLES = {item["role"] for item in CATALOG if item["id"] in RUNNABLE_MODELS}
 
 def send(value):
     data = json.dumps(value, ensure_ascii=False, allow_nan=False)
@@ -68,8 +85,13 @@ def weights_bytes(model_id):
     return sum(f.stat().st_size for f in (MODELS / model_id / "weights").rglob("*") if f.is_file())
 
 def release(key):
+    global PREFIX_CACHE
     RESIDENT.pop(key, None)
     RESIDENT_BYTES.pop(key, None)
+    event("models.evicted", {"id": key[0], "role": key[1]})
+    # A prompt cache belongs to the weights it was computed with.
+    if key[1] == "reasoning":
+        PREFIX_CACHE = None
     # mlx-whisper holds its own module-level reference; dropping ours is not enough to free it.
     if key[0] == "whisper" and "mlx_whisper.transcribe" in sys.modules:
         holder = sys.modules["mlx_whisper.transcribe"].ModelHolder
@@ -162,7 +184,7 @@ def bounded_audio(path):
 def synthesize(text, voice, speed, cancelled=None):
     import numpy as np
     model = load("kokoro", "tts")
-    voices = Path(model_path("kokoro")) / "voices"
+    voices = (Path(model_path("kokoro")) / "voices").resolve()
     selected = (voices / (voice + ".safetensors")).resolve()
     if not selected.is_relative_to(voices) or not selected.is_file():
         raise ValueError("This voice is not present in the installed Kokoro revision.")
@@ -184,12 +206,21 @@ def synthesize(text, voice, speed, cancelled=None):
 DUPLEX_CHUNK = 6
 DUPLEX_LEAD = 8
 
-def duplex_reply(path, instructions=None, history=None, cancelled=None, audio=None):
-    """Hear a recording and answer aloud, handing over each piece of the answer as it is made."""
+# In interleaved mode the model writes six text tokens, then twelve audio frames, and so on. Twelve
+# frames is 0.96 s of speech, so a second of reply costs about nineteen tokens either way.
+DUPLEX_TOKENS_PER_SECOND = 18.75
+
+def duplex_reply(path, instructions=None, history=None, cancelled=None, audio=None, max_seconds=None):
+    """Hear a recording and answer aloud, handing over each piece of the answer as it is made.
+
+    `max_seconds` bounds the spoken reply. The model does not hold to a length it is asked for —
+    "one or two sentences" came back as 25 seconds of talk — so the bound is a token budget.
+    """
     import numpy as np, soundfile as sf
     import mlx.core as mx
     from mlx_audio.sts.models.lfm_audio import ChatState, LFMModality
     model, processor = load("lfm", "duplex")
+    budget = max(60, int(float(max_seconds) * DUPLEX_TOKENS_PER_SECOND)) if max_seconds else 600
     heard, rate = sf.read(path, dtype="float32")
     if heard.ndim > 1:
         heard = heard.mean(axis=1)
@@ -215,7 +246,7 @@ def duplex_reply(path, instructions=None, history=None, cancelled=None, audio=No
         spoken_to = upto
         audio(str(write_audio(samples, model.sample_rate)), len(samples) / model.sample_rate)
 
-    for token, modality in model.generate_from_chat_state(state, mode="interleaved", max_new_tokens=600):
+    for token, modality in model.generate_from_chat_state(state, mode="interleaved", max_new_tokens=budget):
         if cancelled and cancelled():
             raise ValueError("Cancelled.")
         if int(modality) == int(LFMModality.AUDIO_OUT):
@@ -235,13 +266,13 @@ def write_audio(samples, rate):
     sf.write(str(path), samples, rate)
     return path
 
-def transcribe(model_id, path):
+def transcribe(model_id, path, prompt=None):
     model = load(model_id, "asr")
     if model_id == "whisper":
         from mlx_whisper import transcribe as whisper_transcribe
         from endpoint import read_mono_16k
         # Pass PCM directly so the packaged fallback does not require ffmpeg.
-        output = whisper_transcribe(read_mono_16k(path), path_or_hf_repo=model_path(model_id), language="en", verbose=None, condition_on_previous_text=False)
+        output = whisper_transcribe(read_mono_16k(path), path_or_hf_repo=model_path(model_id), language="en", verbose=None, condition_on_previous_text=False, initial_prompt=str(prompt)[:120] if prompt else None)
         return output["text"].strip()
     output = model.generate(path)
     return getattr(output, "text", str(output)).strip()
@@ -277,44 +308,167 @@ def take_sentence(text):
         return None, text
     return text[:match.end()].strip(), text[match.end():]
 
-def chat(messages, max_tokens, image=None, delta=None, cancelled=None, speak=None, audio=None):
-    from mlx_vlm import stream_generate
+# The first piece of a reply leaves at the first clause rather than the first sentence: the ear
+# notices the wait before the voice starts far more than a breath after a comma. A clause has to be
+# long enough to be worth saying on its own.
+CLAUSE = re.compile(r"[,;:]\s")
+FIRST_PIECE_WORDS = 6
+
+def take_first_piece(text):
+    """The first sentence, or the first clause of substance, whichever finishes first."""
+    sentence, rest = take_sentence(text)
+    end = len(sentence) if sentence else None
+    for match in CLAUSE.finditer(text):
+        if end is not None and match.end() >= end:
+            break
+        head = text[:match.end()].strip()
+        if len(head.split()) >= FIRST_PIECE_WORDS:
+            return head, text[match.end():]
+    return (sentence, rest) if sentence else (None, text)
+
+def prefix_cache():
+    global PREFIX_CACHE
+    if PREFIX_CACHE is None:
+        from mlx_vlm.apc import APCManager
+        PREFIX_CACHE = APCManager()
+    return PREFIX_CACHE
+
+CONFIG = {}
+
+def render(messages, image=False):
     from mlx_vlm.prompt_utils import apply_chat_template
     from mlx_vlm.utils import load_config
     model, processor = load("qwen", "reasoning")
+    if "qwen" not in CONFIG:
+        CONFIG["qwen"] = load_config(model_path("qwen"))
+    return model, processor, apply_chat_template(processor, CONFIG["qwen"], messages[-20:], num_images=1 if image else 0, enable_thinking=False)
+
+def prepare(messages, cancelled=None):
+    """Prefill what the coming turn will begin with, so the turn itself starts at its own words.
+
+    The template renders the last assistant message differently when nothing follows it, so the
+    prefix is cut out of a rendered turn rather than rendered on its own; otherwise its tokens are
+    not a prefix of the turn's and the cache is never hit.
+    """
+    global PREFIX_CACHE
+    from mlx_vlm import stream_generate
+    from mlx_vlm.apc import APCManager
+    began = time.perf_counter()
+    model, processor, rendered = render(messages + [{"role": "user", "content": ""}])
+    marker = rendered.rfind("<|im_start|>user")
+    if marker <= 0:
+        return {"prepared": False}
+    # This MLX version only stores a hybrid-model checkpoint on a cache miss. Reusing the
+    # old prefix here kept every later turn at the first 236 cached tokens, even as history
+    # grew. Prepare a complete replacement and publish it only after it finishes; cancelling
+    # preparation leaves the previous checkpoint usable by the foreground question.
+    prepared_cache = APCManager()
+    prompt_tokens = cached_tokens = 0
+    for chunk in stream_generate(model, processor, rendered[:marker], max_tokens=1, temperature=0.0, apc_manager=prepared_cache):
+        if cancelled and cancelled():
+            raise ValueError("Cancelled.")
+        prompt_tokens = getattr(chunk, "prompt_tokens", 0)
+        cached_tokens = getattr(chunk, "cached_tokens", 0)
+    if cancelled and cancelled():
+        raise ValueError("Cancelled.")
+    PREFIX_CACHE = prepared_cache
+    return {"prepared": True, "promptTokens": prompt_tokens, "cachedTokens": cached_tokens,
+            "elapsedMs": round((time.perf_counter() - began) * 1000)}
+
+def chat(messages, max_tokens, image=None, delta=None, cancelled=None, speak=None, audio=None, max_sentences=None, route_tasks=False, timing=None):
+    from mlx_vlm import stream_generate
     if image:
         if not Path(image).resolve().is_relative_to(TEMP):
             raise ValueError("Only the selected temporary observation may be used.")
-    prompt = apply_chat_template(processor, load_config(model_path("qwen")), messages[-20:], num_images=1 if image else 0, enable_thinking=False)
+    began = time.perf_counter()
+    first_token_ms = None
+    synthesis_ms = 0.0
+    prompt_tokens = cached_tokens = 0
+    model, processor, prompt = render(messages, bool(image))
     text = ""
     pending = ""
+    pieces = 0
+    routing = None if route_tasks else False
+    reported = 0
 
     def say(piece):
         # Synthesis happens here, between tokens, because the worker runs one job at a time: a
         # separate request for speech would wait behind the generation it is meant to keep up with.
+        nonlocal pieces, synthesis_ms
         words = for_speech(piece)
         if not words:
             return
+        started = time.perf_counter()
         samples, rate = synthesize(words, speak.get("voice", "bm_george"), speak.get("speed", 1), cancelled)
+        synthesis_ms += (time.perf_counter() - started) * 1000
+        pieces += 1
         audio(str(write_audio(samples, rate)), len(samples) / rate)
 
-    for chunk in stream_generate(model, processor, prompt, image=[image] if image else None, max_tokens=min(max_tokens, 2000), temperature=0.4):
+    for chunk in stream_generate(model, processor, prompt, image=[image] if image else None, max_tokens=min(max_tokens, 2000), temperature=0.4, apc_manager=None if image else prefix_cache()):
         if cancelled and cancelled():
             raise ValueError("Cancelled.")
+        if first_token_ms is None:
+            first_token_ms = (time.perf_counter() - began) * 1000
+            prompt_tokens = getattr(chunk, "prompt_tokens", 0)
+            cached_tokens = getattr(chunk, "cached_tokens", 0)
         text += chunk.text
+        if routing is None:
+            prefix = text.lstrip()
+            if "<task/>".startswith(prefix) or "<task>".startswith(prefix):
+                if prefix not in ("<task/>", "<task>"):
+                    continue
+            routing = prefix.startswith("<task")
+        if routing:
+            return "<task/>"
+        finished = False
+        if max_sentences:
+            # Wait for a following character, so a token ending with "3." is not mistaken for
+            # a full stop before the next token supplies the decimal digits.
+            sentences = [match for match in SENTENCE.finditer(text) if match.end() < len(text)]
+            if len(sentences) >= max_sentences:
+                text = text[:sentences[max_sentences - 1].end()]
+                finished = True
+        addition = text[reported:]
+        reported = len(text)
         if delta:
-            delta(chunk.text)
+            delta(addition)
         if speak and audio:
-            pending += chunk.text
+            pending += addition
             while True:
-                sentence, rest = take_sentence(pending)
-                if not sentence:
+                piece, rest = (take_first_piece if pieces == 0 else take_sentence)(pending)
+                if not piece:
                     break
                 pending = rest
-                say(sentence)
+                say(piece)
+        if finished:
+            break
     if speak and audio and pending.strip():
         say(pending)
+    if timing:
+        timing({"firstTokenMs": round(first_token_ms or 0), "synthesisMs": round(synthesis_ms), "totalMs": round((time.perf_counter() - began) * 1000), "promptCharacters": len(prompt),
+                "promptTokens": prompt_tokens, "cachedTokens": cached_tokens,
+                "residentMB": {key[0]: round(value / 1_000_000) for key, value in RESIDENT_BYTES.items()}})
     return text.strip()
+
+def warm_up(model_id, role):
+    """The first generation after a load runs at a fraction of the speed — kernels are compiled on
+    the way — and the first turn is exactly where that shows. Paid here, at launch, instead."""
+    import numpy as np
+    if role == "reasoning":
+        chat([{"role": "user", "content": "Say ready."}], 3)
+    elif role == "tts":
+        synthesize("Ready.", "bm_george", 1.0)
+    elif role == "embedding":
+        embed(["ready"])
+    elif role in ("asr", "duplex"):
+        path = write_audio(np.zeros(8000, dtype=np.float32), 16000)
+        try:
+            if role == "asr":
+                transcribe(model_id, str(path))
+            else:
+                duplex_reply(str(path), "Say ready.", None, None, None, max_seconds=2)
+        finally:
+            path.unlink(missing_ok=True)
 
 def fixture_font(size):
     from PIL import ImageFont
@@ -399,10 +553,10 @@ def require(model_id, reason):
         item = catalog(model_id)
         raise ValueError(f"Install {item['name'] if item else model_id} first: {reason}")
 
-def endpoint_fixtures(cancelled):
+def endpoint_fixtures(cancelled, text=QUALIFY_TEXT):
     """One rendered phrase becomes a finished turn, an unfinished turn, and silence."""
     import numpy as np
-    samples, rate = synthesize(QUALIFY_TEXT, "bm_george", 1.0, cancelled)
+    samples, rate = synthesize(text, "bm_george", 1.0, cancelled)
     finished = np.concatenate([samples, np.zeros(int(rate * 1.5), dtype=np.float32)])
     unfinished = samples[: int(len(samples) * 0.55)]
     silence = np.zeros(rate * 3, dtype=np.float32)
@@ -563,6 +717,27 @@ def qualify(model_id, item, cancelled):
         finally:
             path.unlink(missing_ok=True)
         return checks
+    if model_id == "keyword":
+        from wake_keywords import KeywordListener
+        checks = []
+        samples_to_check = [
+            ("Jarvis", "Hey Jarvis.", True), ("Jarvis", "Jarvis.", True),
+            ("Friday", "Hey Friday.", True), ("Friday", "Friday.", True),
+            ("Friday", "Hey Jarvis.", False),
+            ("Jarvis", "What is the capital of France?", False),
+        ]
+        for index, (name, text, expected) in enumerate(samples_to_check * 3):
+            samples, rate = synthesize(text, "bm_george" if index < len(samples_to_check) * 2 else "af_heart", 1, cancelled=cancelled)
+            from scipy.signal import resample_poly
+            from math import gcd
+            g = gcd(rate, 16000)
+            samples = np.concatenate([np.zeros(6400), resample_poly(samples, 16000 // g, rate // g), np.zeros(16000)])
+            listener = KeywordListener(model_path(model_id), name)
+            detected = any([listener.accept(samples[i:i+512]) for i in range(0, len(samples), 512)])
+            checks.append(check(f"Take {index // len(samples_to_check) + 1}, {name}: {text}", str(detected), detected == expected))
+        quiet = KeywordListener(model_path(model_id)).accept(np.zeros(16000 * 3))
+        checks.append(check("Silence rejected", str(quiet), not quiet))
+        return checks
     if role == "wake":
         from wake import predict as wake_predict, THRESHOLD as WAKE_THRESHOLD
         weights = model_path(model_id)
@@ -591,11 +766,12 @@ def qualify(model_id, item, cancelled):
         turn = model_path("smart-turn") if role == "turn" else None
         silero = model_path("silero")
         takes = []
-        for index in range(QUALIFY_TAKES):
-            stage(f"Rendering speech and silence, take {index + 1} of {QUALIFY_TAKES}")
-            paths = endpoint_fixtures(cancelled)
+        rounds = TURN_TAKES if role == "turn" else QUALIFY_TAKES
+        for index in range(rounds):
+            stage(f"Rendering speech and silence, take {index + 1} of {rounds}")
+            paths = endpoint_fixtures(cancelled, TURN_TEXT if role == "turn" else QUALIFY_TEXT)
             try:
-                stage(f"Running {item['name']}, take {index + 1} of {QUALIFY_TAKES}")
+                stage(f"Running {item['name']}, take {index + 1} of {rounds}")
                 takes.append([predict(str(path), silero, turn) for path in paths])
             finally:
                 for path in paths:
@@ -611,11 +787,17 @@ def qualify(model_id, item, cancelled):
             ]
         probabilities = [result["probability"] for result in spoken]
         spread = ", ".join(f"{value:.3f}" for value in probabilities)
+        # What matters for safety has to hold on every render: silence and an unfinished thought
+        # never end a turn. For the finished question, every render clears the authors' bar and
+        # the typical render clears the stricter one this product ends a turn on; the one render
+        # in several that lands under it costs a pause of a second and a half, not a cut-off.
+        middle = sorted(probabilities)[len(probabilities) // 2]
         return [
             check("Probability in range", spread, all(0.0 <= value <= 1.0 for value in probabilities)),
             check("Silence never finishes a turn", *tally(quiet, "complete", False)),
             check("Unfinished speech never finishes a turn", *tally(partial, "complete", False)),
-            check(f"Every finished sentence reaches {THRESHOLD}", f"{spread} · lowest {min(probabilities):.3f}", all(result["complete"] is True for result in spoken)),
+            check(f"Every finished question reaches {TURN_FLOOR}", f"{spread} · lowest {min(probabilities):.3f}", all(value >= TURN_FLOOR for value in probabilities)),
+            check(f"A typical finished question reaches {THRESHOLD}", f"median {middle:.3f}", middle >= THRESHOLD),
         ]
     raise ValueError("This role has no qualified Mac check yet.")
 
@@ -632,6 +814,7 @@ def record_qualification(model_id, qualified, checks, elapsed, detail):
     return record
 
 def execute(request):
+    began = time.perf_counter()
     request_id = request["id"]
     method = request["method"]
     p = request.get("params", {})
@@ -641,15 +824,23 @@ def execute(request):
             raise ValueError("Cancelled.")
         if method == "ping":
             import mlx.core as mx
-            result = {"version": 1, "mlx": True, "memory": mx.get_active_memory(), "peakMemory": mx.get_peak_memory(), "roles": sorted(RUNNABLE_ROLES)}
+            result = {"version": 1, "mlx": True, "memory": mx.get_active_memory(), "peakMemory": mx.get_peak_memory(), "roles": sorted(RUNNABLE_ROLES), "models": sorted(RUNNABLE_MODELS)}
         elif method == "models.status":
             result = {item["id"]: manifest(item["id"]) for item in CATALOG}
         elif method == "model.install":
             model_id = p["id"]
             item = next(item for item in CATALOG if item["id"] == model_id)
-            # Refused because the worker cannot run the role, not because of a label on it.
-            if item["role"] not in RUNNABLE_ROLES:
+            if model_id not in RUNNABLE_MODELS:
                 raise ValueError("This research profile has no Mac adapter in this worker yet.")
+            if model_id == "keyword":
+                from wake_keywords import install
+                target = MODELS / model_id
+                event("model.progress", {"id": model_id, "stage": "Downloading verified keyword model"})
+                revision = install(target / "weights")
+                record = {"id": model_id, "repository": item["repository"], "revision": revision, "installedAt": time.time(), "qualified": False}
+                (target / "manifest.json").write_text(json.dumps(record))
+                send({"version": 1, "id": request_id, "result": record})
+                return
             os.environ.pop("HF_HUB_OFFLINE", None)
             from huggingface_hub import HfApi, snapshot_download
             from huggingface_hub import constants as hf_constants
@@ -682,26 +873,36 @@ def execute(request):
             said, seconds = duplex_reply(
                 bounded_audio(p["path"]), p.get("instructions"), p.get("history"), cancelled,
                 lambda clip, duration: event("duplex.audio", {"requestId": request_id, "conversationId": p.get("conversationId"), "path": clip, "duration": duration}),
+                p.get("maxSeconds"),
             )
             result = {"text": said, "duration": seconds}
+        elif method == "chat.prepare":
+            result = prepare(p["messages"], cancelled)
         elif method == "models.warm":
             # The first exchange is the one that feels slowest, so the models a spoken turn needs
             # are loaded before anybody asks for them. Smallest first: they all have to fit at once.
             warmed = []
             for role in (p.get("roles") or ["asr", "embedding", "reasoning", "tts"]):
+                if cancelled():
+                    raise ValueError("Cancelled.")
                 ready = [item["id"] for item in CATALOG
                          if item["role"] == role and (manifest(item["id"]) or {}).get("qualified")]
                 if not ready:
                     continue
                 try:
-                    load(min(ready, key=weights_bytes), role)
+                    model_id = min(ready, key=weights_bytes)
+                    load(model_id, role)
+                    if cancelled():
+                        raise ValueError("Cancelled.")
+                    warm_up(model_id, role)
                     warmed.append(role)
-                except Exception:
+                except Exception as error:
+                    print(f"warm {role}: {error}", file=sys.stderr)
                     continue
             result = {"warmed": warmed}
         elif method == "asr":
             path = bounded_audio(p["path"])
-            result = {"text": transcribe(p.get("model", "whisper"), path)}
+            result = {"text": transcribe(p.get("model", "whisper"), path, p.get("prompt"))}
         elif method == "endpoint":
             from endpoint import predict
             result = predict(bounded_audio(p["path"]), model_path("silero"), model_path("smart-turn"))
@@ -718,8 +919,10 @@ def execute(request):
                 lambda piece: event("chat.delta", {"requestId": request_id, "conversationId": p.get("conversationId"), "text": piece}),
                 cancelled, p.get("speak"),
                 lambda path, duration: event("chat.audio", {"requestId": request_id, "conversationId": p.get("conversationId"), "path": path, "duration": duration}),
+                p.get("maxSentences"), p.get("routeTasks", False),
+                lambda result: event("chat.timing", {"conversationId": p.get("conversationId"), "queueMs": round((began - request.get("_queuedAt", began)) * 1000), **result}),
             )
-            result = {"text": text}
+            result = {"text": "" if text == "<task/>" else text, "task": text == "<task/>"}
         elif method == "embed":
             result = {"vectors": embed(p["texts"]), "revision": manifest("embedding")["revision"]}
         elif method == "ground":
@@ -760,6 +963,17 @@ def execute(request):
         CANCELLED.discard(request_id)
         PENDING.discard(request_id)
 
+# The open microphone, heard frame by frame on its own thread. Frames and the questions asked about
+# them never enter the executor, so a reply being written cannot make the listener late.
+LISTENER = None
+
+def listener():
+    global LISTENER
+    if LISTENER is None:
+        from listen import Listener
+        LISTENER = Listener(send, model_path)
+    return LISTENER
+
 for line in sys.stdin:
     if len(line.encode()) > 1_048_576:
         break
@@ -767,15 +981,25 @@ for line in sys.stdin:
         request = json.loads(line)
         if request.get("version") != 1:
             raise ValueError("Unsupported protocol version.")
-        if request.get("method") == "cancel":
-            cancelled_id = request.get("params", {}).get("requestId")
+        method = request.get("method")
+        params = request.get("params", {})
+        if method == "cancel":
+            cancelled_id = params.get("requestId")
             if cancelled_id in PENDING:
                 CANCELLED.add(cancelled_id)
+        elif method == "audio.frame":
+            if LISTENER:
+                LISTENER.push(params)
+        elif method == "listen.configure":
+            listener().push({"_configure": True, **params})
+        elif method == "endpoint" and request.get("id") and "path" not in params:
+            listener().push({"_ask": request["id"], **params})
         elif request.get("id"):
             if len(PENDING) >= 128:
                 send({"version": 1, "id": request["id"], "error": "The model queue is full."})
             else:
                 PENDING.add(request["id"])
+                request["_queuedAt"] = time.perf_counter()
                 EXECUTOR.submit(execute, request)
     except Exception:
         continue

@@ -1,28 +1,55 @@
 import { Headphones, Mic, Volume2 } from 'lucide-react'
-import { DUPLEX_MODEL, type ConversationEngine } from '../../../shared/speech'
-import { ENDPOINT_MODELS, NAME_MODELS, WAKE_MODEL } from '../../../shared/turn'
+import { useEffect, useState } from 'react'
+import { Settings, type VoiceStatus } from '../../../shared/contracts'
+import { DUPLEX_MODEL, engineReady, type ConversationEngine } from '../../../shared/speech'
+import {
+  KEYWORD_MODEL,
+  TURN_MODEL,
+  VOICE_MODEL,
+  wakeReady,
+  nameWakeReady,
+} from '../../../shared/turn'
 import { useJarvis } from '../state'
 import { Core } from '../Orb'
 import { Button, Group, Row, Toggle } from '../ui'
 
 /** What the microphone is doing, in the words the orb uses for the same states. */
-function microphoneStatus(voice: { phase: string; handsFree: boolean; watching: boolean }) {
-  if (voice.phase === 'listening')
-    return voice.handsFree
-      ? 'HANDS-FREE · LISTENING · CLICK THE ORB TO FINISH'
-      : 'LISTENING · CLICK THE ORB TO FINISH'
+function microphoneStatus(voice: VoiceStatus, endpointing: boolean, continuous = false) {
+  if (voice.phase === 'listening') {
+    const finish = endpointing ? 'FINISHES WHEN YOU STOP' : 'CLICK THE ORB TO FINISH'
+    return voice.handsFree ? `HANDS-FREE · LISTENING · ${finish}` : `LISTENING · ${finish}`
+  }
   if (voice.phase === 'speaking') return 'SPEECH PLAYBACK · CLICK THE ORB TO INTERRUPT'
-  if (voice.handsFree) return 'HANDS-FREE · THE MICROPHONE OPENS AGAIN AFTER THIS REPLY'
-  if (voice.watching) return 'LISTENING FOR YOUR NAME · NOTHING IS BEING RECORDED'
+  if (voice.handsFree)
+    return continuous
+      ? 'LIVE CONVERSATION · THE MICROPHONE STAYS OPEN'
+      : 'HANDS-FREE · THE MICROPHONE OPENS AGAIN AFTER THIS REPLY'
+  if (voice.watching) {
+    if (voice.listener?.state === 'ready')
+      return voice.listener.detector === 'vad'
+        ? 'LISTENING FOR SPEECH'
+        : 'LISTENING FOR YOUR NAME · AUDIO IS STAYING ON THIS MAC'
+    if (voice.listener?.state === 'error' || voice.listener?.state === 'stalled')
+      return 'WAKE LISTENER NEEDS ATTENTION · RUN A WAKE CHECK'
+    return 'STARTING THE WAKE LISTENER'
+  }
   return 'MICROPHONE IDLE'
 }
 
 export function Voice() {
   const { snapshot, command, busy } = useJarvis()
+  const [name, setName] = useState(snapshot.settings.wakeName)
+  useEffect(() => setName(snapshot.settings.wakeName), [snapshot.settings.wakeName])
   const granted = snapshot.permissions.microphone === 'granted'
-  const unqualified = ENDPOINT_MODELS.filter(
-    (id) => !snapshot.models.some((model) => model.id === id && model.qualified),
-  ).map((id) => snapshot.models.find((model) => model.id === id)?.name ?? id)
+  const qualified = (id: string) =>
+    snapshot.diagnostics.modelRuntime &&
+    snapshot.models.some(
+      (model) => model.id === id && model.status === 'installed' && model.qualified,
+    )
+  const voiceModel = snapshot.models.find((model) => model.id === VOICE_MODEL)
+  const turnModel = snapshot.models.find((model) => model.id === TURN_MODEL)
+  const canEndpoint = qualified(VOICE_MODEL)
+  const semantic = qualified(TURN_MODEL)
   const endpointing = snapshot.settings.automaticEndpointing
   const duplex = snapshot.models.find((model) => model.id === DUPLEX_MODEL)
   const realtime = snapshot.connections.find((c) => c.id === 'openai-realtime')
@@ -36,35 +63,46 @@ export function Voice() {
   }[] = [
     {
       id: 'pipeline',
-      name: 'Separate models',
-      detail: 'Hears you, thinks, then speaks. Always available.',
-      ready: true,
-      blocked: '',
+      name: 'Local conversation',
+      detail:
+        'Recommended local setup. Speech recognition, replies and speech work together on your Mac.',
+      ready: engineReady('pipeline', qualified, () => false),
+      blocked:
+        'Start the local runtime and check Whisper and Qwen in Local models to enable conversation.',
     },
     {
       id: 'duplex',
-      name: 'One voice model',
-      detail: `${duplex?.name ?? 'A speech-to-speech model'} answers your voice directly, without transcribing it first.`,
-      ready: !!duplex?.qualified,
+      name: 'LFM Audio · experimental',
+      detail: `${duplex?.name ?? 'A speech-to-speech model'} answers from audio. A short local transcript also routes tasks and memory requests.`,
+      ready: engineReady('duplex', qualified, () => false),
       blocked: duplex
-        ? `${duplex.name} has not passed its checks on this Mac yet.`
+        ? `Check ${duplex.name} and a speech recognition model in Local models first.`
         : 'No speech-to-speech model is installed.',
     },
     {
       id: 'realtime',
       name: 'OpenAI Realtime',
-      detail: 'The fastest and the only one that sends your voice off this Mac.',
-      ready: realtime?.status === 'connected',
-      blocked: 'Connect OpenAI Realtime in Connections first.',
+      detail:
+        'Live audio, semantic turn detection and interruption. Voice and conversation context are sent to OpenAI; usage is paid.',
+      ready:
+        realtime?.status === 'connected' &&
+        snapshot.settings.privacyMode !== 'local-only' &&
+        snapshot.settings.budget.maxCostUsd !== null,
+      blocked:
+        'Connect OpenAI, set a usage ceiling in Connections, and use Local-first privacy mode.',
     },
   ]
-  const qualified = (id: string) =>
-    snapshot.models.some((model) => model.id === id && model.qualified)
-  const wakeName =
-    snapshot.models.find((model) => model.id === WAKE_MODEL)?.name ?? 'the wake model'
-  const canWake = qualified(WAKE_MODEL)
-  const canHearName = NAME_MODELS.some(qualified)
+  const wakeName = snapshot.settings.wakeName
+  const customWake = qualified(KEYWORD_MODEL)
+  const canWake = wakeReady(qualified, wakeName)
+  const canHearName = nameWakeReady(qualified)
   const canInterrupt = qualified('silero')
+  const natural =
+    snapshot.settings.automaticEndpointing &&
+    snapshot.settings.handsFree &&
+    snapshot.settings.wakeWord &&
+    snapshot.settings.wakeOnName &&
+    snapshot.settings.bargeIn
   return (
     <>
       <div className="voice-card">
@@ -73,19 +111,25 @@ export function Voice() {
         </div>
         <div>
           <span className="eyebrow">THE VOICE OF JARVIS</span>
-          <h2>George</h2>
-          <p>British · composed · quietly capable</p>
+          <h2>{engine === 'realtime' ? 'Cedar' : engine === 'duplex' ? 'LFM Audio' : 'George'}</h2>
+          <p>
+            {engine === 'pipeline'
+              ? 'British · composed · quietly capable'
+              : 'A concise voice conversation'}
+          </p>
           <Button
             onPress={() => {
-              void command({ type: 'voice.audition' })
+              void command({ type: engine === 'pipeline' ? 'voice.audition' : 'voice.toggle' })
             }}
             busy={busy.has('voice.audition')}
           >
             <Volume2 size={14} />
-            Hear a little introduction
+            {engine === 'pipeline' ? 'Hear a little introduction' : 'Start a voice check'}
           </Button>
         </div>
-        <span className="voice-signature">bm_george</span>
+        <span className="voice-signature">
+          {engine === 'pipeline' ? 'bm_george' : engine === 'realtime' ? 'OpenAI' : 'Local audio'}
+        </span>
       </div>
       {!snapshot.models.find((m) => m.id === 'kokoro' && m.status === 'installed') && (
         <div className="inline-note">
@@ -94,6 +138,36 @@ export function Voice() {
         </div>
       )}
       <Group title="A natural rhythm">
+        <Row
+          title={`Ready when you say “Hey ${wakeName}”`}
+          description="Enable wake word, automatic turn endings, hands-free follow-up, interruption and brief answers together."
+        >
+          <Button
+            variant="primary"
+            isDisabled={natural || !canWake || !canEndpoint || !canHearName}
+            busy={busy.has('settings.update')}
+            onPress={async () => {
+              const permissions = granted
+                ? snapshot.permissions
+                : await command({ type: 'permission.request', permission: 'microphone' })
+              if (permissions?.microphone === 'granted')
+                await command({
+                  type: 'settings.update',
+                  patch: {
+                    automaticEndpointing: true,
+                    handsFree: true,
+                    wakeWord: true,
+                    wakeOnName: true,
+                    bargeIn: true,
+                    replyLength: 'brief',
+                    speakReplies: true,
+                  },
+                })
+            }}
+          >
+            {natural ? 'Enabled' : 'Enable natural conversation'}
+          </Button>
+        </Row>
         <Row title="Speaking pace" description="Give each thought a little more room.">
           <div className="range-control">
             <input
@@ -102,6 +176,7 @@ export function Voice() {
               min="0.7"
               max="1.4"
               step="0.05"
+              disabled={engine !== 'pipeline'}
               value={snapshot.settings.voiceSpeed}
               onChange={(event) => {
                 void command({
@@ -150,7 +225,9 @@ export function Voice() {
           title={granted ? 'Microphone connected' : 'Let Jarvis hear you'}
           description={
             granted
-              ? 'Raw audio is temporary and stays on this Mac.'
+              ? engine === 'realtime'
+                ? 'Active voice audio is streamed to OpenAI. Wake word detection stays on this Mac.'
+                : 'Raw audio is temporary and stays on this Mac.'
               : 'Microphone access is requested only when you enable it.'
           }
         >
@@ -172,22 +249,36 @@ export function Voice() {
         </Row>
         <div
           className="level-meter"
-          aria-label={`${snapshot.voice.phase === 'speaking' ? 'Speech' : 'Microphone'} level ${Math.round(snapshot.voice.level * 100)} percent`}
+          role="meter"
+          aria-label={`${snapshot.voice.phase === 'speaking' ? 'Speech' : 'Microphone'} level`}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(snapshot.voice.level * 100)}
         >
           {Array.from({ length: 48 }, (_, index) => (
             <span key={index} className={index / 48 < snapshot.voice.level ? 'lit' : ''} />
           ))}
         </div>
-        <p className="metadata">{microphoneStatus(snapshot.voice)}</p>
+        <p className="metadata">
+          {microphoneStatus(
+            snapshot.voice,
+            engine === 'realtime' || endpointing,
+            engine === 'realtime',
+          )}
+        </p>
         <Toggle
           label="Finish a turn naturally"
           description={
-            unqualified.length
-              ? `${unqualified.join(' and ')} ${unqualified.length > 1 ? 'need' : 'needs'} to pass ${unqualified.length > 1 ? 'their checks' : 'its check'} in Local models before Jarvis can finish a turn for you.`
-              : 'Experimental: Silero and Smart Turn check a pause after you activate the microphone. Click the orb to finish at any time.'
+            engine === 'realtime'
+              ? 'OpenAI semantic turn detection ends your turn automatically. Click the orb to finish sooner.'
+              : !canEndpoint
+                ? `${voiceModel?.name ?? 'Silero VAD'} needs to pass its check in Local models before Jarvis can hear the end of a turn.`
+                : semantic
+                  ? `${voiceModel?.name ?? 'Silero VAD'} hears you stop and ${turnModel?.name ?? 'Smart Turn'} hears whether the thought is finished, so a question ends the turn about a quarter of a second after you stop. Click the orb to finish at any time.`
+                  : `${voiceModel?.name ?? 'Silero VAD'} hears you stop and ends the turn after a second and a half of quiet. Check ${turnModel?.name ?? 'Smart Turn'} in Local models and a finished thought ends it sooner.`
           }
-          isDisabled={!!unqualified.length}
-          selected={endpointing}
+          isDisabled={engine === 'realtime' || !canEndpoint}
+          selected={engine === 'realtime' || endpointing}
           onChange={(automaticEndpointing) => {
             void command({ type: 'settings.update', patch: { automaticEndpointing } })
           }}
@@ -195,27 +286,60 @@ export function Voice() {
         <Toggle
           label="Hands-free conversation"
           description={
-            endpointing
-              ? 'The microphone opens again after each reply, and closes on its own if you say nothing. Click the orb while Jarvis speaks to stop.'
-              : 'Continue listening after a response. Requires qualified voice endpointing.'
+            engine === 'realtime'
+              ? 'The microphone stays open during a live conversation. The session closes after you stop talking; click the orb during a reply to end it.'
+              : endpointing
+                ? 'The microphone opens again after each reply, and closes on its own if you say nothing. Click the orb while Jarvis speaks to stop.'
+                : 'Continue listening after a response. Requires qualified voice endpointing.'
           }
-          isDisabled={!endpointing}
-          selected={snapshot.settings.handsFree}
+          isDisabled={engine === 'realtime' || !endpointing}
+          selected={engine === 'realtime' || snapshot.settings.handsFree}
           onChange={(handsFree) => {
             void command({ type: 'settings.update', patch: { handsFree } })
           }}
         />
       </Group>
       <Group
-        title="Answering to your name"
-        detail="The microphone stays open to hear it. Nothing is written down until a turn begins."
+        title="Wake name"
+        detail="The microphone stays open to hear it. Short name candidates are checked locally and discarded."
       >
+        <Row
+          title="What you call your assistant"
+          description={
+            customWake
+              ? 'Choose 2–32 English letters, up to three words. A distinct name is easier to recognize.'
+              : 'Install and check Custom Wake Name in Local models to choose another name.'
+          }
+        >
+          <div className="shortcut-editor">
+            <input
+              aria-label="Wake name"
+              value={name}
+              maxLength={32}
+              disabled={!customWake}
+              onChange={(event) => setName(event.target.value)}
+            />
+            <Button
+              isDisabled={
+                !customWake ||
+                name.trim() === wakeName ||
+                !Settings.shape.wakeName.safeParse(name).success
+              }
+              busy={busy.has('settings.update')}
+              onPress={() => {
+                void command({ type: 'settings.update', patch: { wakeName: name.trim() } })
+              }}
+            >
+              Save
+            </Button>
+          </div>
+        </Row>
         <Toggle
-          label="Answer to “Hey Jarvis”"
+          label={`Answer to “Hey ${wakeName}”`}
           description={
             canWake
               ? 'The microphone listens for the phrase and nothing else. It never transcribes what it hears.'
-              : `Install and check ${wakeName} in Local models before Jarvis can hear its name.`
+              : 'Install and check Custom Wake Name in Local models before Jarvis can hear its name.'
           }
           isDisabled={!canWake}
           selected={snapshot.settings.wakeWord}
@@ -224,13 +348,15 @@ export function Voice() {
           }}
         />
         <Toggle
-          label="Answer to “Jarvis” on its own"
+          label={`Answer to “${wakeName}” on its own`}
           description={
             !snapshot.settings.wakeWord
-              ? 'Switch on “Hey Jarvis” first; the bare name is heard by the same open microphone.'
+              ? `Switch on “Hey ${wakeName}” first; the bare name uses the same microphone.`
               : canHearName
-                ? 'The phrase model cannot hear the name alone, so a burst of speech short enough to be one word is transcribed on this Mac to check. Anything longer is never transcribed.'
-                : 'Install and check Parakeet in Local models before Jarvis can hear the bare name.'
+                ? customWake
+                  ? 'A keyword candidate is confirmed in a short local audio check, so similar-sounding words do not open a conversation.'
+                  : 'A short burst is transcribed locally to check the name. Install Custom Wake Name for streaming recognition.'
+                : 'Install and check Whisper in Local models to confirm the bare name.'
           }
           isDisabled={!snapshot.settings.wakeWord || !canHearName}
           selected={snapshot.settings.wakeOnName}
@@ -238,15 +364,38 @@ export function Voice() {
             void command({ type: 'settings.update', patch: { wakeOnName } })
           }}
         />
+        <Row
+          title="Check the wake name"
+          description={
+            snapshot.voice.wakeTest?.message ??
+            `Say “Hey ${wakeName}” after starting the check. This tests your microphone and does not open a cloud conversation.`
+          }
+        >
+          <Button
+            isDisabled={
+              !snapshot.settings.wakeWord ||
+              !granted ||
+              !['off', 'error'].includes(snapshot.voice.phase)
+            }
+            busy={snapshot.voice.wakeTest?.state === 'listening' || busy.has('voice.testWake')}
+            onPress={() => {
+              void command({ type: 'voice.testWake' })
+            }}
+          >
+            Test wake name
+          </Button>
+        </Row>
         <Toggle
           label="Let me interrupt"
           description={
-            canInterrupt
-              ? 'Speak over a reply to stop it. Needs echo cancellation on this audio route, or Jarvis would interrupt itself.'
-              : 'Install and check Silero VAD in Local models before Jarvis can tell you from itself.'
+            engine === 'realtime'
+              ? 'Speak over a reply to stop playback and take the next turn. OpenAI detects speech; this Mac cancels playback echo.'
+              : canInterrupt
+                ? 'Speak over a reply to stop it. Needs echo cancellation on this audio route, or Jarvis would interrupt itself.'
+                : 'Install and check Silero VAD in Local models before Jarvis can tell you from itself.'
           }
-          isDisabled={!canInterrupt}
-          selected={snapshot.settings.bargeIn}
+          isDisabled={engine === 'realtime' || !canInterrupt}
+          selected={engine === 'realtime' || snapshot.settings.bargeIn}
           onChange={(bargeIn) => {
             void command({ type: 'settings.update', patch: { bargeIn } })
           }}

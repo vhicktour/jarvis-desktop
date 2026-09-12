@@ -1,9 +1,19 @@
 import { ArrowUpRight, BrainCircuit, Check, Download, HardDrive, Trash2 } from 'lucide-react'
+import { useState } from 'react'
 import type { ModelRecord } from '../../../shared/contracts'
+import { LOCAL_VOICE_MODELS, localVoiceReady } from '../../../shared/speech'
 import { useJarvis } from '../state'
 import { Badge, Button, Confirm, Group, IconButton, Row } from '../ui'
 
-function ModelRow({ model, runtime }: { model: ModelRecord; runtime: boolean }) {
+function ModelRow({
+  model,
+  runtime,
+  working,
+}: {
+  model: ModelRecord
+  runtime: boolean
+  working: boolean
+}) {
   const { command } = useJarvis()
   return (
     <div className="model-row">
@@ -23,7 +33,11 @@ function ModelRow({ model, runtime }: { model: ModelRecord; runtime: boolean }) 
         {model.status === 'installed' && (
           <span className="model-revision">
             {model.revision?.slice(0, 10)} ·{' '}
-            {model.qualified ? 'Qualified on this Mac' : 'Installed · qualification pending'}
+            {model.checking
+              ? 'Checking…'
+              : model.qualified
+                ? 'Checks passed on this Mac'
+                : 'Installed · check needed'}
           </span>
         )}
       </div>
@@ -32,6 +46,7 @@ function ModelRow({ model, runtime }: { model: ModelRecord; runtime: boolean }) 
           <>
             <IconButton
               label={`Check ${model.name}`}
+              isDisabled={!runtime || working}
               onPress={() => {
                 void command({ type: 'model.qualify', id: model.id })
               }}
@@ -44,7 +59,7 @@ function ModelRow({ model, runtime }: { model: ModelRecord; runtime: boolean }) 
               action="Remove model"
               destructive
               trigger={
-                <IconButton label={`Remove ${model.name}`}>
+                <IconButton label={`Remove ${model.name}`} isDisabled={!runtime || working}>
                   <Trash2 size={14} />
                 </IconButton>
               }
@@ -55,7 +70,7 @@ function ModelRow({ model, runtime }: { model: ModelRecord; runtime: boolean }) 
           </>
         ) : (
           <Button
-            isDisabled={!model.installable || model.status === 'installing'}
+            isDisabled={!runtime || !model.installable || working}
             busy={model.status === 'installing'}
             onPress={() => {
               void command({ type: 'model.install', id: model.id })
@@ -81,7 +96,20 @@ function ModelRow({ model, runtime }: { model: ModelRecord; runtime: boolean }) 
 }
 
 export function Models() {
-  const { snapshot, command } = useJarvis()
+  const { snapshot, command, busy } = useJarvis()
+  const [showMore, setShowMore] = useState(false)
+  const runtime = snapshot.diagnostics.modelRuntime
+  const working = snapshot.models.some((model) => model.checking || model.status === 'installing')
+  const qualified = (id: string) =>
+    runtime &&
+    snapshot.models.some(
+      (model) => model.id === id && model.status === 'installed' && model.qualified,
+    )
+  const canUseLocal = localVoiceReady(qualified)
+  const standard = LOCAL_VOICE_MODELS.flatMap((id) =>
+    snapshot.models.filter((model) => model.id === id),
+  )
+  const optional = snapshot.models.filter((model) => !standard.includes(model))
   return (
     <>
       <div className="system-banner">
@@ -89,7 +117,7 @@ export function Models() {
           <HardDrive size={24} />
         </div>
         <div>
-          <h2>Made for your Mac.</h2>
+          <h2>Local conversation.</h2>
           <p>
             {snapshot.diagnostics.chip} · {snapshot.diagnostics.memoryGB || 16} GB unified memory
           </p>
@@ -117,26 +145,52 @@ export function Models() {
           </Button>
         </Row>
       )}
-      <Group
-        title="Everyday intelligence"
-        detail="Install the capabilities you want. Model downloads are pinned to an exact revision."
+      <Row
+        title={canUseLocal ? 'Local voice is available' : 'Finish local voice setup'}
+        description="These components work together. You do not need to choose a different model for each conversation."
       >
-        {snapshot.models
-          .filter((m) => !m.experimental)
-          .map((model) => (
-            <ModelRow key={model.id} model={model} runtime={snapshot.diagnostics.modelRuntime} />
-          ))}
-      </Group>
+        <Button
+          variant="primary"
+          busy={busy.has('settings.update')}
+          isDisabled={!canUseLocal || snapshot.settings.conversationEngine === 'pipeline'}
+          onPress={() => {
+            void command({
+              type: 'settings.update',
+              patch: { conversationEngine: 'pipeline', replyLength: 'brief', speakReplies: true },
+            })
+          }}
+        >
+          {snapshot.settings.conversationEngine === 'pipeline'
+            ? 'Selected'
+            : 'Use local conversation'}
+        </Button>
+      </Row>
       <Group
-        title="On the horizon"
-        detail="Research profiles stay disabled until their Mac-specific tests pass."
+        title="Standard voice components"
+        detail="Hearing, replies, speech, turn endings and your wake name."
       >
-        {snapshot.models
-          .filter((m) => m.experimental)
-          .map((model) => (
-            <ModelRow key={model.id} model={model} runtime={snapshot.diagnostics.modelRuntime} />
-          ))}
+        {standard.map((model) => (
+          <ModelRow key={model.id} model={model} runtime={runtime} working={working} />
+        ))}
       </Group>
+      <Button
+        variant="ghost"
+        aria-expanded={showMore}
+        aria-controls="optional-models"
+        onPress={() => setShowMore(!showMore)}
+      >
+        {showMore ? 'Hide optional models' : 'Show optional and experimental models'}
+      </Button>
+      <div id="optional-models" hidden={!showMore}>
+        <Group
+          title="Optional capabilities"
+          detail="Memory search, alternative recognition and experimental models. These are not required for the standard voice setup."
+        >
+          {optional.map((model) => (
+            <ModelRow key={model.id} model={model} runtime={runtime} working={working} />
+          ))}
+        </Group>
+      </div>
       <p className="fine-print">
         Models run in a separate process without provider credentials. Large inference jobs run one
         at a time to leave room for the rest of your Mac.

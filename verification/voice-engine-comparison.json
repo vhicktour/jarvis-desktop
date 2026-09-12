@@ -1,0 +1,131 @@
+{
+  "generatedAt": "2026-09-12T16:06:03.983Z",
+  "workers": "/Users/victor/Applications/Jarvis.app/Contents/Resources/workers",
+  "scope": "Three synthesized utterances, Whisper ASR followed by the selected local route. Exact history prefix prepared for the pipeline. First audio is a worker event, not native or acoustic output.",
+  "humanSpeechTested": false,
+  "engines": {
+    "pipeline": {
+      "warmedMs": 19450,
+      "cases": [
+        {
+          "input": "What is two plus two?",
+          "transcript": "What is 2 plus 2?",
+          "reply": "The answer is 4.",
+          "asrMs": 461,
+          "firstAudioMs": 1840,
+          "totalMs": 1841,
+          "preparationMs": 1927
+        },
+        {
+          "input": "What is the capital of France?",
+          "transcript": "What is the capital of France?",
+          "reply": "The capital of France is Paris.",
+          "asrMs": 366,
+          "firstAudioMs": 1554,
+          "totalMs": 1554,
+          "preparationMs": 338
+        },
+        {
+          "input": "Give me one useful tip for naming a function.",
+          "transcript": "Give me one useful tip for naming a function.",
+          "reply": "Name your functions to clearly describe what they do.",
+          "asrMs": 422,
+          "firstAudioMs": 2174,
+          "totalMs": 2175,
+          "preparationMs": 484
+        }
+      ],
+      "memory": {
+        "version": 1,
+        "mlx": true,
+        "memory": 3902885538,
+        "peakMemory": 5019021650,
+        "roles": [
+          "asr",
+          "duplex",
+          "embedding",
+          "reasoning",
+          "tts",
+          "turn",
+          "vad",
+          "vision",
+          "wake"
+        ],
+        "models": [
+          "embedding",
+          "kokoro",
+          "lfm",
+          "openwakeword",
+          "parakeet",
+          "qwen",
+          "silero",
+          "smart-turn",
+          "ui-tars",
+          "whisper"
+        ]
+      }
+    },
+    "duplex": {
+      "warmedMs": 13186,
+      "cases": [
+        {
+          "input": "What is two plus two?",
+          "transcript": "What is 2 plus 2?",
+          "reply": "2 plus 2 equals",
+          "asrMs": 349,
+          "firstAudioMs": 1013,
+          "totalMs": 1013,
+          "preparationMs": 0
+        },
+        {
+          "input": "What is the capital of France?",
+          "transcript": "What is the capital of France?",
+          "reply": "The capital of France is Paris.",
+          "asrMs": 338,
+          "firstAudioMs": 1173,
+          "totalMs": 1627,
+          "preparationMs": 0
+        },
+        {
+          "input": "Give me one useful tip for naming a function.",
+          "transcript": "Give me one useful tip for naming a function.",
+          "reply": "Give each function a clear, descriptive name that describes its purpose, such as \"calculateTotal\" or \"findName\".",
+          "asrMs": 378,
+          "firstAudioMs": 1284,
+          "totalMs": 9775,
+          "preparationMs": 0
+        }
+      ],
+      "memory": {
+        "version": 1,
+        "mlx": true,
+        "memory": 1889669578,
+        "peakMemory": 2887812310,
+        "roles": [
+          "asr",
+          "duplex",
+          "embedding",
+          "reasoning",
+          "tts",
+          "turn",
+          "vad",
+          "vision",
+          "wake"
+        ],
+        "models": [
+          "embedding",
+          "kokoro",
+          "lfm",
+          "openwakeword",
+          "parakeet",
+          "qwen",
+          "silero",
+          "smart-turn",
+          "ui-tars",
+          "whisper"
+        ]
+      }
+    }
+  },
+  "completed": true
+}

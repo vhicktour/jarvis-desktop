@@ -1,0 +1,210 @@
+{
+  "generatedAt": "2026-09-12T21:41:11.386057+00:00",
+  "observedRunningBackup": [
+    "93249     1 /Users/victor/personal/Jarvis/verification/private/Jarvis-before-custom-wake-2026-09-12.app/Contents/MacOS/Jarvis",
+    "93251 93249 /Users/victor/personal/Jarvis/verification/private/Jarvis-before-custom-wake-2026-09-12.app/Contents/Frameworks/Jarvis Helper.app/Contents/MacOS/Jarvis Helper",
+    "93252 93249 /Users/victor/personal/Jarvis/verification/private/Jarvis-before-custom-wake-2026-09-12.app/Contents/Frameworks/Jarvis Helper.app/Contents/MacOS/Jarvis Helper",
+    "93254 93249 /Users/victor/personal/Jarvis/verification/private/Jarvis-before-custom-wake-2026-09-12.app/Contents/Frameworks/Jarvis Helper (Renderer).app/Contents/MacOS/Jarvis Helper (Renderer)",
+    "93256 93249 /Users/victor/personal/Jarvis/verification/private/Jarvis-before-custom-wake-2026-09-12.app/Contents/Frameworks/Jarvis Helper (Renderer).app/Contents/MacOS/Jarvis Helper (Renderer)",
+    "93257 93249 /Users/victor/personal/Jarvis/verification/private/Jarvis-before-custom-wake-2026-09-12.app/Contents/Resources/native/JarvisNative",
+    "93283 93249 /Users/victor/personal/Jarvis/verification/private/Jarvis-before-custom-wake-2026-09-12.app/Contents/Resources/native/JarvisKeychain",
+    "93284 93249 /Users/victor/personal/Jarvis/verification/private/Jarvis-before-custom-wake-2026-09-12.app/Contents/Frameworks/Jarvis Helper.app/Contents/MacOS/Jarvis Helper",
+    "93291 93284 /Users/victor/personal/Jarvis/verification/private/Jarvis-before-custom-wake-2026-09-12.app/Contents/Resources/workers/runtime/cpython-3.12.12-macos-aarch64-none/bin/python3.12",
+    "93313 93291 /Users/victor/personal/Jarvis/verification/private/Jarvis-before-custom-wake-2026-09-12.app/Contents/Resources/workers/runtime/cpython-3.12.12-macos-aarch64-none/bin/python3.12"
+  ],
+  "expectedApplication": "/Applications/Jarvis.app",
+  "macControl": "Unlocked; quit the running rollback through its application menu and launched /Applications/Jarvis.app through native computer control.",
+  "typecheckPassed": true,
+  "automatedTestsPassed": 61,
+  "localServicePassed": true,
+  "localServiceUsesInstalledWorkers": "/Applications/Jarvis.app/Contents/Resources",
+  "humanSpeechTested": true,
+  "microphonePermissionResult": "granted",
+  "foregroundCheckCancellation": true,
+  "previewVerified": [
+    "Standard voice components grouped together",
+    "Optional models collapsed initially and accessible when expanded",
+    "Voice page labels the local pipeline and experimental LFM route",
+    "Existing Settings layout and orb appearance preserved"
+  ],
+  "installedUpdate": true,
+  "installedAt": "2026-09-12T21:38:30.930829+00:00",
+  "installationPath": "/Applications/Jarvis.app",
+  "signatureVerified": true,
+  "bundleHashes": {
+    "app.asar": "0043b1111c2b85f2d8f99ce74d33caf829e230f80201bbd00bb00177bef27035",
+    "native/JarvisNative": "372d72d369c76a99438ecde3b36d854c8e0cd22ffd5e765310291e4edca95a9f",
+    "workers/models.py": "84f3f05b9199d654e7efac336f7b0279dc61d61810d1beb022fb1fb490adf89c",
+    "workers/listen.py": "874840e0be173608b539ce2836a751041891571d55d693615a8aaf81ee153dbe",
+    "workers/wake_keywords.py": "4bb88d77d64b6d862217487aae5699947ea7d1de6eb5b97916eebbed4ca783bb",
+    "workers/wake.py": "388e7efed75ce28d24b58f6c9453e08993c0c6f097ab547cf5777a37c8758ebb"
+  },
+  "runtime": {
+    "sherpa": "1.13.8",
+    "mlx_result": 6,
+    "keyword_silence": null
+  },
+  "backup": "/Users/victor/personal/Jarvis/verification/private/Jarvis-before-capture-fix-2026-09-12.zip",
+  "notarized": false,
+  "rollbackArchives": [
+    {
+      "previousPath": "/Users/victor/personal/Jarvis/verification/private/Jarvis-before-realtime-2026-09-12.app",
+      "archive": "/Users/victor/personal/Jarvis/verification/private/Jarvis-before-realtime-2026-09-12.zip",
+      "crcVerified": true,
+      "appAsarHash": "6d509898ce8ad4b38e9a6fc5692330de596ed82f0650b73f5a4cef8019c41b85",
+      "removedLaunchableCopy": true,
+      "stillRunning": false
+    },
+    {
+      "previousPath": "/Users/victor/personal/Jarvis/verification/private/Jarvis-before-custom-wake-2026-09-12.app",
+      "archive": "/Users/victor/personal/Jarvis/verification/private/Jarvis-before-custom-wake-2026-09-12.zip",
+      "crcVerified": true,
+      "appAsarHash": "33a5317906547688e4ded1146b56decc570b27655b98cab9b20986629b088a24",
+      "removedLaunchableCopy": true,
+      "stillRunning": false
+    },
+    {
+      "previousPath": "/Users/victor/personal/Jarvis/verification/private/Jarvis-before-2026-09-12.app",
+      "archive": "/Users/victor/personal/Jarvis/verification/private/Jarvis-before-2026-09-12.zip",
+      "crcVerified": true,
+      "appAsarHash": "b4ec60edb59fc05928d836dc9f8867eb1db706a277096270ee010c5b9ba58576",
+      "removedLaunchableCopy": true,
+      "stillRunning": false
+    },
+    {
+      "previousPath": "/Users/victor/personal/Jarvis/verification/private/Jarvis-first-repair-2026-09-12.app",
+      "archive": "/Users/victor/personal/Jarvis/verification/private/Jarvis-first-repair-2026-09-12.zip",
+      "crcVerified": true,
+      "appAsarHash": "2cb7a4658ab0716e1e8252c2ff9f437880c65fa2b3e112ede5edb51d1ae40bb0",
+      "removedLaunchableCopy": true,
+      "stillRunning": false
+    },
+    {
+      "previousPath": "/Users/victor/Applications/Jarvis.app",
+      "archive": "/Users/victor/personal/Jarvis/verification/private/Jarvis-user-applications-before-model-usability-2026-09-12.zip",
+      "crcVerified": true,
+      "appAsarHash": "5e8775b95edec83af8efd3e1232406699ec2e6b7c9c92d14431473b17ef91dc3",
+      "removedLaunchableCopy": true,
+      "stillRunning": false
+    },
+    {
+      "previousPath": "/Users/victor/Applications/Jarvis-previous.app",
+      "archive": "/Users/victor/personal/Jarvis/verification/private/Jarvis-user-previous-2026-09-12.zip",
+      "crcVerified": true,
+      "appAsarHash": "63038125e8210c88aa3006d9cbc2687ae2ae26edc089f94271b41d1bacb8a0af",
+      "removedLaunchableCopy": true,
+      "stillRunning": false
+    }
+  ],
+  "launchableRollbackCopiesRemaining": [],
+  "runningMainApplication": [
+    "62911 /Applications/Jarvis.app/Contents/MacOS/Jarvis"
+  ],
+  "activatedAt": "2026-09-12T21:38:51.313Z",
+  "observedRunningInstalledProcesses": [
+    "62911 /Applications/Jarvis.app/Contents/MacOS/Jarvis",
+    "62957 /Applications/Jarvis.app/Contents/Frameworks/Jarvis Helper.app/Contents/MacOS/Jarvis Helper",
+    "62958 /Applications/Jarvis.app/Contents/Frameworks/Jarvis Helper.app/Contents/MacOS/Jarvis Helper",
+    "62961 /Applications/Jarvis.app/Contents/Frameworks/Jarvis Helper (Renderer).app/Contents/MacOS/Jarvis Helper (Renderer)",
+    "62963 /Applications/Jarvis.app/Contents/Frameworks/Jarvis Helper (Renderer).app/Contents/MacOS/Jarvis Helper (Renderer)",
+    "62964 /Applications/Jarvis.app/Contents/Resources/native/JarvisNative",
+    "62968 /Applications/Jarvis.app/Contents/Resources/native/JarvisKeychain",
+    "62969 /Applications/Jarvis.app/Contents/Frameworks/Jarvis Helper.app/Contents/MacOS/Jarvis Helper",
+    "62979 /Applications/Jarvis.app/Contents/Resources/workers/runtime/cpython-3.12.12-macos-aarch64-none/bin/python3.12",
+    "62997 /Applications/Jarvis.app/Contents/Resources/workers/runtime/cpython-3.12.12-macos-aarch64-none/bin/python3.12",
+    "63507 /Applications/Jarvis.app/Contents/Frameworks/Jarvis Helper (Renderer).app/Contents/MacOS/Jarvis Helper (Renderer)"
+  ],
+  "installedUI": {
+    "runningApplication": "/Applications/Jarvis.app",
+    "runtime": "Connected",
+    "database": "Unlocked with Keychain",
+    "conversationEngine": "pipeline",
+    "wakeName": "Jarvis",
+    "wakeWord": true,
+    "wakeOnName": true,
+    "automaticEndpointing": true,
+    "handsFree": true,
+    "bargeIn": true,
+    "replyLength": "brief",
+    "speakReplies": true,
+    "standardComponents": "All six show Checks passed on this Mac",
+    "microphone": "Connected; local wake frame telemetry observed"
+  },
+  "humanWakePassed": false,
+  "humanVoiceReport": "Fresh capture fix installed; human conversation acceptance pending.",
+  "humanWakeDiagnostic": {
+    "attemptedAt": "2026-09-12T21:39:26Z",
+    "finishedAt": "2026-09-12T21:39:41.424Z",
+    "result": "Speech reached the detector, but Jarvis was not recognized.",
+    "inputLevel": 0.25081927329301834,
+    "pcmLevel": 0.24049631449842918,
+    "inputChannels": 7,
+    "inputSampleRate": 48000,
+    "peakSpeechProbability": 0.675,
+    "wakeRecognized": false,
+    "humanPhraseConfirmed": false,
+    "interruption": "The Mac locked during the test. Waiting for an unlocked controlled retry."
+  },
+  "audioInput": {
+    "device": "MacBook Pro Microphone",
+    "sampleRate": 48000,
+    "channels": 3,
+    "volumeScalar": 0.27450982,
+    "muted": false,
+    "attemptedVolumeAdjustmentApplied": false
+  },
+  "previousInstallationBeforeCaptureFix": {
+    "installedAt": "2026-09-12T19:39:41.901998+00:00",
+    "bundleHashes": {
+      "app.asar": "932372314b524610db332af152adb4ed4642ff4e5dbc197539b093358d7c6611",
+      "workers/models.py": "1db481762d2c692ff392887bf2a112ecd36b0846ada6442ca5f22966f35bf257",
+      "workers/listen.py": "247f6049c09530d2d0f801094afbf8c899e787e796f87c6d73bfdf85084049dd",
+      "workers/wake_keywords.py": "4bb88d77d64b6d862217487aae5699947ea7d1de6eb5b97916eebbed4ca783bb",
+      "workers/requirements.lock": "fd9618d6986d8bf5e7d318fab96cca6169408499944949f37bf6312a8c8dd322",
+      "native/JarvisNative": "17cae18f926765cc8d7d999c78cc7ababbbaaf5d17fd74fb3a7c98e56cd825d9"
+    },
+    "backup": "/Users/victor/personal/Jarvis/verification/private/Jarvis-applications-before-model-usability-2026-09-12.zip",
+    "observedRunningInstalledProcesses": [
+      "36056     1 /Applications/Jarvis.app/Contents/MacOS/Jarvis",
+      "36064 36056 /Applications/Jarvis.app/Contents/Frameworks/Jarvis Helper.app/Contents/MacOS/Jarvis Helper",
+      "36065 36056 /Applications/Jarvis.app/Contents/Frameworks/Jarvis Helper.app/Contents/MacOS/Jarvis Helper",
+      "36068 36056 /Applications/Jarvis.app/Contents/Frameworks/Jarvis Helper (Renderer).app/Contents/MacOS/Jarvis Helper (Renderer)",
+      "36070 36056 /Applications/Jarvis.app/Contents/Frameworks/Jarvis Helper (Renderer).app/Contents/MacOS/Jarvis Helper (Renderer)",
+      "36071 36056 /Applications/Jarvis.app/Contents/Resources/native/JarvisNative",
+      "36081 36056 /Applications/Jarvis.app/Contents/Resources/native/JarvisKeychain",
+      "36082 36056 /Applications/Jarvis.app/Contents/Frameworks/Jarvis Helper.app/Contents/MacOS/Jarvis Helper",
+      "36084 36082 /Applications/Jarvis.app/Contents/Resources/workers/runtime/cpython-3.12.12-macos-aarch64-none/bin/python3.12",
+      "36123 36084 /Applications/Jarvis.app/Contents/Resources/workers/runtime/cpython-3.12.12-macos-aarch64-none/bin/python3.12",
+      "36188 36056 /Applications/Jarvis.app/Contents/Frameworks/Jarvis Helper (Renderer).app/Contents/MacOS/Jarvis Helper (Renderer)"
+    ],
+    "installedTypedConversation": [
+      {
+        "question": "What is two plus two?",
+        "answer": "Four.",
+        "playbackStartMs": 4479
+      },
+      {
+        "question": "Double that.",
+        "answer": "Eight.",
+        "playbackStartMs": 3815
+      }
+    ],
+    "startupPlaybackStartMs": 14158,
+    "humanVoiceReport": "Only the orb changes; no spoken acknowledgment or answer. No listen.wake event was recorded for the reported trial.",
+    "humanWakeDiagnostic": "User reported: The microphone is connected, but no speech was detected. The visible result has not yet been independently captured."
+  },
+  "installedCaptureFix": "installed-capture-fix.json",
+  "installedTypedConversationBeforeCaptureFix": [
+    {
+      "question": "What is two plus two?",
+      "answer": "Four.",
+      "playbackStartMs": 4479
+    },
+    {
+      "question": "Double that.",
+      "answer": "Eight.",
+      "playbackStartMs": 3815
+    }
+  ],
+  "startupPlaybackStartMsBeforeCaptureFix": 14158
+}

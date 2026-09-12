@@ -1,0 +1,28 @@
+{
+  "generatedAt": "2026-09-12T17:54:10.260145+00:00",
+  "packaged": true,
+  "signatureVerified": true,
+  "humanSpeechTested": false,
+  "bundleHashes": {
+    "app.asar": "5e8775b95edec83af8efd3e1232406699ec2e6b7c9c92d14431473b17ef91dc3",
+    "workers/models.py": "1db481762d2c692ff392887bf2a112ecd36b0846ada6442ca5f22966f35bf257",
+    "workers/listen.py": "247f6049c09530d2d0f801094afbf8c899e787e796f87c6d73bfdf85084049dd",
+    "workers/wake_keywords.py": "4bb88d77d64b6d862217487aae5699947ea7d1de6eb5b97916eebbed4ca783bb",
+    "workers/requirements.lock": "fd9618d6986d8bf5e7d318fab96cca6169408499944949f37bf6312a8c8dd322",
+    "native/JarvisNative": "287db9a4b12dfe069fc2b1e7fc53dab6502eb768512b0bfe6dcb14c173f867dd"
+  },
+  "checks": [
+    "Package completed successfully",
+    "Deep strict signature verified",
+    "Installed resources match the packaged build",
+    "Installed signed Python imports Sherpa-ONNX 1.13.8, runs MLX, and creates a custom Friday detector that rejects silence"
+  ],
+  "backup": "/Users/victor/personal/Jarvis/verification/private/Jarvis-before-custom-wake-2026-09-12.app",
+  "runtime": {
+    "sherpa": "1.13.8",
+    "mlx_result": 6,
+    "keyword_silence": null
+  },
+  "uiVerification": "Pending: computer control reports the Mac is locked; user has been asked to unlock it.",
+  "localEngineSelection": "Pending installed UI access; the previous profile used OpenAI Realtime."
+}

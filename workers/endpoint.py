@@ -47,20 +47,25 @@ def voice_activity(audio, silero_path):
         scores.append(float(output[0, 0]))
     return sum(score > 0.5 for score in scores) >= 3, any(score > 0.5 for score in scores[-10:])
 
+def turn_probability(audio, turn_path):
+    """Smart Turn's probability that the last eight seconds of 16 kHz audio end a finished thought."""
+    global _EXTRACTOR
+    if _EXTRACTOR is None:
+        from transformers import WhisperFeatureExtractor
+        _EXTRACTOR = WhisperFeatureExtractor(chunk_length=8)
+    audio = audio[-128000:]
+    samples = np.pad(audio, (max(0, 128000 - len(audio)), 0))
+    features = _EXTRACTOR(samples, sampling_rate=16000, return_tensors="np", padding="max_length", max_length=128000, truncation=True, do_normalize=True).input_features.astype(np.float32)
+    model = session(str(Path(turn_path) / "smart-turn-v3.2-cpu.onnx"))
+    return float(model.run(None, {"input_features": features})[0][0, 0])
+
 def predict(path, silero_path, turn_path=None):
     """Omit turn_path to read only the speech-activity view of the clip."""
-    global _EXTRACTOR
     audio = read_mono_16k(path)[-128000:]
     if len(audio) < 512:
         return {"hasSpeech": False, "speechAtEnd": False, "complete": False, "probability": 0.0}
     has_speech, speech_at_end = voice_activity(audio, silero_path)
     if not has_speech or speech_at_end or turn_path is None:
         return {"hasSpeech": has_speech, "speechAtEnd": speech_at_end, "complete": False, "probability": 0.0}
-    if _EXTRACTOR is None:
-        from transformers import WhisperFeatureExtractor
-        _EXTRACTOR = WhisperFeatureExtractor(chunk_length=8)
-    samples = np.pad(audio, (max(0, 128000 - len(audio)), 0))
-    features = _EXTRACTOR(samples, sampling_rate=16000, return_tensors="np", padding="max_length", max_length=128000, truncation=True, do_normalize=True).input_features.astype(np.float32)
-    model = session(str(Path(turn_path) / "smart-turn-v3.2-cpu.onnx"))
-    probability = float(model.run(None, {"input_features": features})[0][0, 0])
+    probability = turn_probability(audio, turn_path)
     return {"hasSpeech": has_speech, "speechAtEnd": False, "complete": probability >= THRESHOLD, "probability": probability}

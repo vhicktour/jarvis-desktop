@@ -27,6 +27,7 @@ export function Diagnostics() {
       </div>
       <Group title="This Mac">
         {[
+          { title: 'Running application', value: d.applicationPath ?? 'Starting' },
           { title: 'System', value: `${d.platform} · ${d.chip}` },
           { title: 'Unified memory', value: `${d.memoryGB} GB` },
           { title: 'Application memory', value: `${d.appMemoryMB} MB · model process excluded` },
@@ -36,7 +37,10 @@ export function Diagnostics() {
             title: 'Encrypted database',
             value: d.databaseEncrypted ? 'Unlocked with Keychain' : 'Starting',
           },
-          { title: 'Local model runtime', value: d.modelRuntime ? 'Connected' : 'Not installed' },
+          {
+            title: 'Local model runtime',
+            value: d.modelRuntime ? 'Connected' : 'Unavailable or starting',
+          },
         ].map((row) => (
           <Row key={row.title} title={row.title}>
             <span className="diagnostic-value">{row.value}</span>

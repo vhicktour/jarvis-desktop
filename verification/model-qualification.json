@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-09-10T21:32:58.448Z",
-  "profile": "/private/tmp/jarvis-native-qa2",
+  "generatedAt": "2026-09-12T14:55:38.257Z",
+  "profile": "/Users/victor/Library/Application Support/Jarvis",
   "microphoneRouteTested": false,
   "scope": "Each installed model runs the observable behavior its role is relied on for, against the installed revision on this Mac. Results are recorded in each model manifest.",
   "models": [
@@ -17,12 +17,12 @@
         },
         {
           "label": "Recognition speed",
-          "value": "1.9× realtime",
+          "value": "1.4× realtime",
           "passed": true
         }
       ],
-      "elapsedSeconds": 9.741,
-      "detail": "Parakeet passed 2 checks on this Mac in 9.7 s.",
+      "elapsedSeconds": 12.398,
+      "detail": "Parakeet passed 2 checks on this Mac in 12.4 s.",
       "name": "Parakeet",
       "installed": true
     },
@@ -44,12 +44,12 @@
         },
         {
           "label": "Peak amplitude",
-          "value": "0.347",
+          "value": "0.341",
           "passed": true
         },
         {
           "label": "Speech energy",
-          "value": "0.0576 RMS",
+          "value": "0.0577 RMS",
           "passed": true
         },
         {
@@ -58,8 +58,8 @@
           "passed": true
         }
       ],
-      "elapsedSeconds": 1.323,
-      "detail": "Kokoro passed 5 checks on this Mac in 1.3 s.",
+      "elapsedSeconds": 0.552,
+      "detail": "Kokoro passed 5 checks on this Mac in 0.6 s.",
       "name": "Kokoro",
       "installed": true
     },
@@ -80,8 +80,8 @@
           "passed": true
         }
       ],
-      "elapsedSeconds": 4.422,
-      "detail": "Qwen 3.5 passed 2 checks on this Mac in 4.4 s.",
+      "elapsedSeconds": 4.484,
+      "detail": "Qwen 3.5 passed 2 checks on this Mac in 4.5 s.",
       "name": "Qwen 3.5",
       "installed": true
     },
@@ -112,8 +112,8 @@
           "passed": true
         }
       ],
-      "elapsedSeconds": 0.846,
-      "detail": "Qwen Embedding passed 4 checks on this Mac in 0.8 s.",
+      "elapsedSeconds": 1.268,
+      "detail": "Qwen Embedding passed 4 checks on this Mac in 1.3 s.",
       "name": "Qwen Embedding",
       "installed": true
     },
@@ -130,12 +130,12 @@
         },
         {
           "label": "Recognition speed",
-          "value": "12.4× realtime",
+          "value": "8.0× realtime",
           "passed": true
         }
       ],
-      "elapsedSeconds": 2.228,
-      "detail": "Whisper passed 2 checks on this Mac in 2.2 s.",
+      "elapsedSeconds": 1.969,
+      "detail": "Whisper passed 2 checks on this Mac in 2.0 s.",
       "name": "Whisper",
       "installed": true
     },
@@ -161,8 +161,8 @@
           "passed": true
         }
       ],
-      "elapsedSeconds": 1.789,
-      "detail": "Silero VAD passed 3 checks on this Mac in 1.8 s.",
+      "elapsedSeconds": 1.126,
+      "detail": "Silero VAD passed 3 checks on this Mac in 1.1 s.",
       "name": "Silero VAD",
       "installed": true
     },
@@ -170,44 +170,107 @@
       "id": "smart-turn",
       "role": "turn",
       "revision": "f766f81d3cfdf7737ac64aad813d91bbfd56bf93",
-      "qualified": false,
+      "qualified": true,
       "checks": [
         {
           "label": "Probability in range",
-          "value": "0.470, 0.441, 0.500",
+          "value": "0.869, 0.696, 0.823, 0.850, 0.625",
           "passed": true
         },
         {
           "label": "Silence never finishes a turn",
-          "value": "3 of 3",
+          "value": "5 of 5",
           "passed": true
         },
         {
           "label": "Unfinished speech never finishes a turn",
-          "value": "3 of 3",
+          "value": "5 of 5",
           "passed": true
         },
         {
-          "label": "Every finished sentence reaches 0.65",
-          "value": "0.470, 0.441, 0.500 · lowest 0.441",
-          "passed": false
+          "label": "Every finished question reaches 0.5",
+          "value": "0.869, 0.696, 0.823, 0.850, 0.625 · lowest 0.625",
+          "passed": true
+        },
+        {
+          "label": "A typical finished question reaches 0.65",
+          "value": "median 0.823",
+          "passed": true
         }
       ],
-      "elapsedSeconds": 0.941,
-      "detail": "Smart Turn is not qualified on this Mac: Every finished sentence reaches 0.65 — 0.470, 0.441, 0.500 · lowest 0.441",
+      "elapsedSeconds": 1.968,
+      "detail": "Smart Turn passed 5 checks on this Mac in 2.0 s.",
       "name": "Smart Turn",
       "installed": true
     },
     {
+      "id": "openwakeword",
+      "role": "wake",
+      "revision": "93d1bd6f4f48750cb6a76206ce5bd92d846820c8",
+      "qualified": true,
+      "checks": [
+        {
+          "label": "Score in range",
+          "value": "0.983, 0.976, 0.985",
+          "passed": true
+        },
+        {
+          "label": "The name reaches 0.5",
+          "value": "0.983, 0.976, 0.985 · lowest 0.976",
+          "passed": true
+        },
+        {
+          "label": "Other speech never wakes",
+          "value": "3 of 3",
+          "passed": true
+        },
+        {
+          "label": "Silence never wakes",
+          "value": "3 of 3",
+          "passed": true
+        }
+      ],
+      "elapsedSeconds": 1.148,
+      "detail": "Open Wake Word passed 4 checks on this Mac in 1.1 s.",
+      "name": "Open Wake Word",
+      "installed": true
+    },
+    {
       "id": "lfm",
-      "name": "LFM Audio",
       "role": "duplex",
-      "revision": "",
-      "installed": false,
-      "qualified": false,
-      "checks": [],
-      "elapsedSeconds": 0,
-      "detail": "Research profile. Installation is refused until a qualified Mac adapter exists."
+      "revision": "55d4de65fa10fa935561aaaa995271d8b8ff2ee0",
+      "qualified": true,
+      "checks": [
+        {
+          "label": "Answer it spoke",
+          "value": "The capital of France is Paris.",
+          "passed": true
+        },
+        {
+          "label": "Length of the answer",
+          "value": "6.48 s",
+          "passed": true
+        },
+        {
+          "label": "Speech energy",
+          "value": "0.0333 RMS",
+          "passed": true
+        },
+        {
+          "label": "Delivered in pieces",
+          "value": "14 clips",
+          "passed": true
+        },
+        {
+          "label": "Ahead of playback, warmed",
+          "value": "1.90× realtime (cold 1.41×)",
+          "passed": true
+        }
+      ],
+      "elapsedSeconds": 6.009,
+      "detail": "LFM Audio passed 5 checks on this Mac in 6.0 s.",
+      "name": "LFM Audio",
+      "installed": true
     },
     {
       "id": "nemotron",
@@ -253,8 +316,8 @@
           "passed": true
         }
       ],
-      "elapsedSeconds": 30.644,
-      "detail": "UI-TARS passed 3 checks on this Mac in 30.6 s.",
+      "elapsedSeconds": 32.061,
+      "detail": "UI-TARS passed 3 checks on this Mac in 32.1 s.",
       "name": "UI-TARS",
       "installed": true
     }
@@ -262,20 +325,22 @@
   "memory": {
     "version": 1,
     "mlx": true,
-    "memory": 4876470588,
-    "peakMemory": 5829546404,
+    "memory": 4876618044,
+    "peakMemory": 5872423182,
     "roles": [
       "asr",
+      "duplex",
       "embedding",
       "reasoning",
       "tts",
       "turn",
       "vad",
-      "vision"
+      "vision",
+      "wake"
     ]
   },
-  "elapsedSeconds": 52.1340815,
-  "installed": 8,
-  "qualified": 7,
-  "passed": false
+  "elapsedSeconds": 63.368028584,
+  "installed": 10,
+  "qualified": 10,
+  "passed": true
 }

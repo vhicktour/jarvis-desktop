@@ -1,0 +1,58 @@
+{
+  "generatedAt": "2026-09-12T15:11:38.844Z",
+  "profile": "/Users/victor/Library/Application Support/Jarvis",
+  "microphoneRouteTested": false,
+  "scope": "Rendered speech is streamed to the listener as 16 kHz frames at real-time pace. Recorded: when speech was heard to start and stop against where it actually is in the clip, and the turn model’s verdict a quarter of a second into the pause, for a finished question, an unfinished one, and silence.",
+  "readyAfterMs": 22656,
+  "cases": {
+    "finished question": {
+      "clipSeconds": 5.17,
+      "speechFrom": 0.783,
+      "speechTo": 5.087,
+      "heardStartAt": 0.768,
+      "heardStopAt": 5.184,
+      "startErrorMs": -15,
+      "stopErrorMs": 97,
+      "transitions": 4,
+      "turnModel": {
+        "askedAt": 5.44,
+        "latencyMs": 111,
+        "hasSpeech": true,
+        "speechAtEnd": false,
+        "complete": true,
+        "probability": 0.9573681354522705
+      }
+    },
+    "unfinished thought": {
+      "clipSeconds": 4.25,
+      "speechFrom": 0.754,
+      "speechTo": 4.176,
+      "heardStartAt": 0.832,
+      "heardStopAt": 4.224,
+      "startErrorMs": 78,
+      "stopErrorMs": 48,
+      "transitions": 6,
+      "turnModel": {
+        "askedAt": 4.544,
+        "latencyMs": 34,
+        "hasSpeech": true,
+        "speechAtEnd": false,
+        "complete": false,
+        "probability": 0.03147178888320923
+      }
+    },
+    "silence": {
+      "transitions": 0,
+      "turnModel": {
+        "askedAt": 2.528,
+        "latencyMs": 0,
+        "hasSpeech": false,
+        "speechAtEnd": false,
+        "complete": false,
+        "probability": 0
+      }
+    }
+  },
+  "errors": [],
+  "passed": true
+}

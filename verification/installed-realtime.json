@@ -1,0 +1,44 @@
+{
+  "generatedAt": "2026-09-12T16:39:18.697174+00:00",
+  "installed": "/Users/victor/Applications/Jarvis.app",
+  "bundleHashes": {
+    "app.asar": "33a5317906547688e4ded1146b56decc570b27655b98cab9b20986629b088a24",
+    "workers/models.py": "baf1ece8111e30ee31d85f0a73cfbef728465ef42b9ac5bf7e2f5c4a0971a979",
+    "workers/listen.py": "1f4d9eaa69f95114d14953c1ce203eff6c6cd63328ffcb1ff0ebd935f4f1cefd",
+    "native/JarvisNative": "21e40d6ffbc3dbf24f1dc4af82eba86a842bcdbe6f10c55d5837ac85f69aacc4"
+  },
+  "signature": "Developer ID; deep strict verification passed",
+  "matchesPackage": true,
+  "notarized": false,
+  "humanSpeechTested": false,
+  "checks": [
+    "Packaging completed before copying",
+    "Staged and installed signatures verified",
+    "Installed resource hashes match the completed package",
+    "Updated app launches as an orb",
+    "Existing OpenAI connection and approved $1 ceiling restored",
+    "OpenAI Realtime selected; engine controls and descriptions update",
+    "Start a voice check opens hands-free listening in installed Settings",
+    "Runtime log confirms hosted session and 24 kHz native capture/output",
+    "Idle hosted session closes and returns to local wake-word listening without an error"
+  ],
+  "runtimeChecks": [
+    {
+      "exitCode": 0,
+      "output": "Bundled Python imports MLX and ONNX Runtime 1.29.0"
+    },
+    {
+      "exitCode": 0,
+      "output": "codex-cli 0.143.0"
+    },
+    {
+      "exitCode": 0,
+      "output": "2.1.267 (Claude Code)"
+    }
+  ],
+  "uiObservedAt": "2026-09-12T16:42:13.069745+00:00",
+  "connectionLog": [
+    "2026-09-12T16:41:27.552Z Realtime voice connected using gpt-realtime-2.1; native capture and output at 24 kHz."
+  ],
+  "humanFeedback": "Requested; not yet received"
+}

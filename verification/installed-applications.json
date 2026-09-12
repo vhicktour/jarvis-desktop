@@ -1,0 +1,30 @@
+{
+  "generatedAt": "2026-09-12T18:40:06.488365+00:00",
+  "installationPath": "/Applications/Jarvis.app",
+  "packaged": true,
+  "signatureVerified": true,
+  "resourceHashesMatchPackage": true,
+  "bundleHashes": {
+    "app.asar": "5e8775b95edec83af8efd3e1232406699ec2e6b7c9c92d14431473b17ef91dc3",
+    "workers/models.py": "1db481762d2c692ff392887bf2a112ecd36b0846ada6442ca5f22966f35bf257",
+    "workers/listen.py": "247f6049c09530d2d0f801094afbf8c899e787e796f87c6d73bfdf85084049dd",
+    "workers/wake_keywords.py": "4bb88d77d64b6d862217487aae5699947ea7d1de6eb5b97916eebbed4ca783bb",
+    "workers/requirements.lock": "fd9618d6986d8bf5e7d318fab96cca6169408499944949f37bf6312a8c8dd322",
+    "native/JarvisNative": "f25c320adba3555e1c2173e82599aa1e24ec159098e7ab04013de83af33ac690"
+  },
+  "runtime": {
+    "sherpa": "1.13.8",
+    "mlx_result": 6,
+    "keyword_silence": null
+  },
+  "typecheckPassed": true,
+  "humanSpeechTested": false,
+  "notarized": false,
+  "checks": [
+    "pnpm package exited successfully",
+    "Deep strict signature verified before and after installation",
+    "Installed resources match the completed package",
+    "Installed Python imports Sherpa-ONNX, runs MLX, and creates a custom Friday wake detector that rejects silence"
+  ],
+  "uiVerification": "Not performed during this build/install request; prior computer control reported the Mac locked."
+}

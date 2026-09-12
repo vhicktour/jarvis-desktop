@@ -1,0 +1,64 @@
+{
+  "generatedAt": "2026-09-12T16:32:45.548Z",
+  "model": "gpt-realtime-2.1",
+  "maxCostUsd": 0.5,
+  "scope": "Real OpenAI WebSocket adapter, semantic VAD, signed native PCM output, and fixed read-only tool response. Native capture opens for the shared output engine; microphone frames are discarded. Only synthesized input is sent; no actual task execution.",
+  "humanSpeechTested": false,
+  "cases": [
+    {
+      "prompt": "What is two plus two?",
+      "voiceEndMs": 1918.1666666666667,
+      "index": 0,
+      "endpointMs": 852,
+      "user": "What is 2 plus 2?",
+      "firstAudioMs": 1407,
+      "audioBytes": 110400,
+      "assistant": "2 plus 2 equals 4.",
+      "playedMs": 2300
+    },
+    {
+      "prompt": "Count slowly from one to thirty.",
+      "voiceEndMs": 2931.25,
+      "index": 1,
+      "endpointMs": 1939,
+      "user": "Count slowly from one to thirty.",
+      "firstAudioMs": 2383,
+      "audioBytes": 153600
+    },
+    {
+      "prompt": "Actually, what is the capital of France?",
+      "voiceEndMs": 2911.4166666666665,
+      "index": 2,
+      "endpointMs": 915,
+      "user": "Actually, what is the capital of France?",
+      "firstAudioMs": 1404,
+      "audioBytes": 117600,
+      "assistant": "Paris is the capital of France.",
+      "playedMs": 2449
+    },
+    {
+      "prompt": "Use your task status tool to check whether I have any active tasks.",
+      "voiceEndMs": 5111.416666666667,
+      "index": 3,
+      "endpointMs": 1407,
+      "firstAudioMs": 1810,
+      "audioBytes": 285600,
+      "user": "Use your task status tool to check whether I have any active tasks.",
+      "assistant": "You don’t have any active tasks right now.",
+      "playedMs": 5950
+    }
+  ],
+  "interruptions": [
+    {
+      "stopAcknowledgmentMs": 1,
+      "inputToStopMs": 726,
+      "playedMs": 672
+    }
+  ],
+  "tools": [
+    "task_status"
+  ],
+  "connectMs": 996,
+  "passed": true,
+  "reportedCostUsd": 0.0413376
+}

@@ -2,6 +2,7 @@ import { join, isAbsolute } from 'node:path'
 import { mkdirSync, existsSync, writeFileSync } from 'node:fs'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
+import { AjvJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/ajv'
 import type { Task, Project, Connection } from '../shared/contracts'
 import type { TaskRun } from '../core/tasks'
 import { Store } from '../core/store'
@@ -11,6 +12,7 @@ import { CodexAdapter } from './codex'
 import { reviewWithClaude } from './claude'
 import { fingerprint, git, prepareWorktree, reviewPackage, runCheck } from './workspace'
 import { GoogleConnection } from './google'
+import { REALTIME_MODEL } from './realtime'
 
 type Host = <T = any>(method: string, params: unknown) => Promise<T>
 export class ProviderHub {
@@ -18,6 +20,7 @@ export class ProviderHub {
   codex: CodexAdapter
   google: GoogleConnection
   mcp?: Client
+  private mcpIdentity?: string
   constructor(
     private config: { dataDir: string; appPath: string; packaged: boolean },
     private store: Store,
@@ -46,6 +49,8 @@ export class ProviderHub {
     for (const id of enabled) {
       if (id === 'claude' && (await this.host('credential.get', { account: 'claude-api' })))
         this.status(id, 'connected', 'API credential saved in Keychain')
+      if (id === 'openai-realtime' && (await this.host('credential.get', { account: id })))
+        this.status(id, 'connected', `${REALTIME_MODEL} · credential saved in Keychain`)
       if (id === 'google' && (await this.host('credential.get', { account: 'google-oauth' })))
         this.status(id, 'connected', 'Read-only OAuth scopes')
       if (id === 'codex') {
@@ -63,7 +68,7 @@ export class ProviderHub {
     invariant(
       this.store.settings().privacyMode !== 'local-only' ||
         id.startsWith('apple-') ||
-        id === 'browser',
+        id === 'browser' || id === 'automation',
       'This connection is disabled in local-only mode.',
     )
     this.status(id, 'connecting')
@@ -85,7 +90,7 @@ export class ProviderHub {
       } else if (id === 'openai-realtime') {
         invariant(config.apiKey?.startsWith('sk-'), 'Enter an OpenAI API key.')
         // Asking for the model itself checks access to it, not merely that the key parses.
-        const response = await fetch('https://api.openai.com/v1/models/gpt-realtime', {
+        const response = await fetch(`https://api.openai.com/v1/models/${REALTIME_MODEL}`, {
           headers: { authorization: `Bearer ${config.apiKey}` },
           signal: AbortSignal.timeout(15_000),
         })
@@ -139,6 +144,7 @@ export class ProviderHub {
         )
         const home = join(this.config.dataDir, 'providers/mcp')
         mkdirSync(home, { recursive: true, mode: 0o700 })
+        await this.mcp?.close()
         this.mcp = new Client({ name: 'jarvis', version: '0.1.0' })
         await this.mcp.connect(
           new StdioClientTransport({
@@ -150,7 +156,8 @@ export class ProviderHub {
           }),
         )
         await this.mcp.listTools()
-        this.status(id, 'connected', 'Tool discovery only · execution requires a scoped adapter')
+        this.mcpIdentity = hash({ command: config.command, args })
+        this.status(id, 'connected', 'Tools available to tasks · each call requires approval')
       }
       this.store.setSetting('connections', [
         ...new Set([...this.store.getSetting<string[]>('connections', []), id]),
@@ -173,10 +180,12 @@ export class ProviderHub {
     )
     if (id === 'codex') await this.codex.logout()
     if (id === 'claude') await this.host('credential.delete', { account: 'claude-api' })
+    if (id === 'openai-realtime') await this.host('credential.delete', { account: id })
     if (id === 'google') await this.host('credential.delete', { account: 'google-oauth' })
     if (id === 'mcp') {
       await this.mcp?.close()
       this.mcp = undefined
+      this.mcpIdentity = undefined
     }
     this.store.setSetting(
       'connections',
@@ -199,6 +208,12 @@ export class ProviderHub {
         reviewTools: [],
         usageCeiling: this.store.settings().budget.maxCostUsd,
       }
+    if (id === 'openai-realtime') return {
+      model: REALTIME_MODEL,
+      credentialPresent: !!(await this.host('credential.get', { account: id })),
+      transport: 'Native PCM over WebSocket',
+      sessionVerified: false,
+    }
     if (id === 'google') return this.google.inspect()
     if (id === 'mcp') {
       invariant(this.mcp, 'Connect a server first.')
@@ -213,6 +228,32 @@ export class ProviderHub {
     }
     invariant(methods[id], 'Unknown connection.')
     return this.host('native', { method: methods[id], params: {} })
+  }
+  async mcpTools() {
+    if (this.store.settings().privacyMode === 'local-only') return []
+    if (!this.mcp || !this.mcpIdentity) return []
+    const result = await this.mcp.listTools()
+    return result.tools.slice(0, 40)
+  }
+  async callMcp(name: string, args: Record<string, unknown>, run: TaskRun) {
+    invariant(this.store.settings().privacyMode !== 'local-only', 'MCP tools are disabled in local-only mode.')
+    const client = this.mcp
+    const identity = this.mcpIdentity
+    invariant(client && identity, 'Connect the reviewed MCP server first.')
+    const tool = (await this.mcpTools()).find((tool) => tool.name === name)
+    invariant(tool, 'That tool is not offered by the connected server.')
+    const validation = new AjvJsonSchemaValidator().getValidator(tool.inputSchema)(args)
+    invariant(validation.valid, validation.errorMessage ?? 'Invalid tool arguments.')
+    const targetHash = hash({ identity, tool })
+    const approval = await run.authorize('mcp.call', { name, arguments: args, schema: tool.inputSchema },
+      `Connected MCP server / ${name}`, targetHash, `Run ${name} with the reviewed arguments`)
+    invariant(this.mcp === client && this.mcpIdentity === identity, 'The MCP connection changed after approval.')
+    invariant(this.store.settings().privacyMode !== 'local-only', 'Local-only mode was enabled after this call was proposed.')
+    const current = (await this.mcpTools()).find((item) => item.name === name)
+    const result = await run.effect(approval, hash({ identity, tool: current }), () =>
+      client.callTool({ name, arguments: args }, undefined, { signal: run.signal, timeout: 60_000 }))
+    invariant(!result.isError, 'The MCP tool reported a failure. Its response is recorded in the task ledger.')
+    return result
   }
   async execute(task: Task, project: Project | undefined, run: TaskRun) {
     invariant(

@@ -1,0 +1,31 @@
+{
+  "generatedAt": "2026-09-12T15:39:52.959Z",
+  "humanSpeechTested": false,
+  "scope": "Synthesized positive, negative and silence fixtures streamed as real-time 16 kHz microphone frames while Qwen generates. This measures listener independence, not live acoustic wake accuracy.",
+  "cases": [
+    {
+      "label": "other speech",
+      "wakes": [],
+      "stillGenerating": true
+    },
+    {
+      "label": "silence",
+      "wakes": [],
+      "stillGenerating": true
+    },
+    {
+      "label": "name",
+      "wakes": [
+        {
+          "generation": 3,
+          "score": 0.9916120171546936,
+          "awake": true,
+          "elapsedMs": 1777.2954580000005,
+          "whileGenerating": true
+        }
+      ],
+      "stillGenerating": true
+    }
+  ],
+  "passed": true
+}

@@ -1,0 +1,31 @@
+{
+  "generatedAt": "2026-09-12T21:20:39.631Z",
+  "profile": "/Users/victor/Library/Application Support/Jarvis",
+  "microphoneRouteTested": true,
+  "scope": "One rendered reply is played out of the speaker twice while the microphone is open: through the audio engine, where Apple’s echo cancellation subtracts it, and through a player outside the engine. The voice model reports how much of each came back as speech.",
+  "rawMicrophone": {
+    "microphone": "MacBook Pro Microphone",
+    "speaker": "MacBook Pro Speakers",
+    "rms": 0.0268,
+    "speechFraction": 0.763
+  },
+  "throughEngine": {
+    "voiceProcessing": true,
+    "replySeconds": 8.72,
+    "speechHeardSeconds": 0.19,
+    "speechFraction": 0.022,
+    "transitions": 2,
+    "idleTransitionsBeforePlayback": 0,
+    "frames": 98
+  },
+  "outsideEngine": {
+    "voiceProcessing": true,
+    "replySeconds": 8.72,
+    "speechHeardSeconds": 0,
+    "speechFraction": 0,
+    "transitions": 0,
+    "idleTransitionsBeforePlayback": 0,
+    "frames": 101
+  },
+  "passed": true
+}

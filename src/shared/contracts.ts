@@ -103,6 +103,7 @@ export const ActionReceipt = z.object({
   status: TaskState,
   objective: z.string(),
   provider: Provider,
+  providerIds: z.record(z.string(), z.string()).default({}),
   createdAt: z.string(),
   evidence: z.array(Evidence),
   effects: z.array(z.string()),
@@ -184,9 +185,16 @@ export const Settings = z.object({
   conversationEngine: z.enum(['pipeline', 'duplex', 'realtime']).default('pipeline'),
   handsFree: z.boolean().default(false),
   wakeWord: z.boolean().default(false),
+  wakeName: z
+    .string()
+    .trim()
+    .min(2)
+    .max(32)
+    .regex(/^[A-Za-z]+(?:[ '-][A-Za-z]+){0,2}$/, 'Use English letters, up to three words.')
+    .default('Jarvis'),
   wakeOnName: z.boolean().default(false),
   bargeIn: z.boolean().default(false),
-  replyLength: z.enum(['brief', 'measured', 'full']).default('measured'),
+  replyLength: z.enum(['brief', 'measured', 'full']).default('brief'),
   voice: z.string().default('bm_george'),
   voiceSpeed: z.number().min(0.7).max(1.4).default(1),
   privacyMode: z.enum(['local-first', 'local-only']).default('local-first'),
@@ -232,6 +240,14 @@ export type VoiceStatus = {
   handsFree: boolean
   /** Whether the microphone is held open listening for the name rather than for a turn. */
   watching: boolean
+  listener?: {
+    state: 'starting' | 'ready' | 'stalled' | 'error'
+    detector: 'keyword' | 'phrase' | 'vad'
+    frames: number
+    speechFrames: number
+    droppedFrames: number
+  }
+  wakeTest?: { state: 'listening' | 'passed' | 'failed'; message: string }
 }
 export type Message = {
   id: string
@@ -241,6 +257,8 @@ export type Message = {
   scope: string
   sources?: { id: string; label: string }[]
   streaming?: boolean
+  /** The reply was stopped before it finished, by the person or by a failure. */
+  interrupted?: boolean
 }
 export type Project = {
   id: string
@@ -300,8 +318,9 @@ export type ModelRecord = {
   revision?: string
   progress?: number
   error?: string
+  checking?: boolean
   experimental: boolean
-  /** Whether the model worker has a load path for this role at all. */
+  /** Whether the model worker has an adapter for this exact model. */
   installable: boolean
   qualified: boolean
   license: string
@@ -319,6 +338,7 @@ export type QualificationResult = {
 }
 export type WindowChoice = { id: number; app: string; title: string; bundleId: string }
 export type Diagnostics = {
+  applicationPath?: string
   platform: string
   chip: string
   memoryGB: number
@@ -378,6 +398,7 @@ export const Command = z.discriminatedUnion('type', [
   z.object({ type: z.literal('voice.toggle') }),
   z.object({ type: z.literal('voice.stopSpeech') }),
   z.object({ type: z.literal('voice.audition') }),
+  z.object({ type: z.literal('voice.testWake') }),
   z.object({
     type: z.literal('conversation.send'),
     text: z.string().trim().min(1).max(30_000),
@@ -470,6 +491,7 @@ export const Command = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('vault.choose') }),
   z.object({ type: z.literal('vault.sync') }),
+  z.object({ type: z.literal('skills.list') }),
   z.object({ type: z.literal('vault.forget') }),
   z.object({
     type: z.literal('permission.request'),

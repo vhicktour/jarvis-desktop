@@ -1,0 +1,50 @@
+[
+  {
+    "previousPath": "/Users/victor/personal/Jarvis/verification/private/Jarvis-before-realtime-2026-09-12.app",
+    "archive": "/Users/victor/personal/Jarvis/verification/private/Jarvis-before-realtime-2026-09-12.zip",
+    "crcVerified": true,
+    "appAsarHash": "6d509898ce8ad4b38e9a6fc5692330de596ed82f0650b73f5a4cef8019c41b85",
+    "removedLaunchableCopy": true,
+    "stillRunning": false
+  },
+  {
+    "previousPath": "/Users/victor/personal/Jarvis/verification/private/Jarvis-before-custom-wake-2026-09-12.app",
+    "archive": "/Users/victor/personal/Jarvis/verification/private/Jarvis-before-custom-wake-2026-09-12.zip",
+    "crcVerified": true,
+    "appAsarHash": "33a5317906547688e4ded1146b56decc570b27655b98cab9b20986629b088a24",
+    "removedLaunchableCopy": true,
+    "stillRunning": false
+  },
+  {
+    "previousPath": "/Users/victor/personal/Jarvis/verification/private/Jarvis-before-2026-09-12.app",
+    "archive": "/Users/victor/personal/Jarvis/verification/private/Jarvis-before-2026-09-12.zip",
+    "crcVerified": true,
+    "appAsarHash": "b4ec60edb59fc05928d836dc9f8867eb1db706a277096270ee010c5b9ba58576",
+    "removedLaunchableCopy": true,
+    "stillRunning": false
+  },
+  {
+    "previousPath": "/Users/victor/personal/Jarvis/verification/private/Jarvis-first-repair-2026-09-12.app",
+    "archive": "/Users/victor/personal/Jarvis/verification/private/Jarvis-first-repair-2026-09-12.zip",
+    "crcVerified": true,
+    "appAsarHash": "2cb7a4658ab0716e1e8252c2ff9f437880c65fa2b3e112ede5edb51d1ae40bb0",
+    "removedLaunchableCopy": true,
+    "stillRunning": false
+  },
+  {
+    "previousPath": "/Users/victor/Applications/Jarvis.app",
+    "archive": "/Users/victor/personal/Jarvis/verification/private/Jarvis-user-applications-before-model-usability-2026-09-12.zip",
+    "crcVerified": true,
+    "appAsarHash": "5e8775b95edec83af8efd3e1232406699ec2e6b7c9c92d14431473b17ef91dc3",
+    "removedLaunchableCopy": true,
+    "stillRunning": false
+  },
+  {
+    "previousPath": "/Users/victor/Applications/Jarvis-previous.app",
+    "archive": "/Users/victor/personal/Jarvis/verification/private/Jarvis-user-previous-2026-09-12.zip",
+    "crcVerified": true,
+    "appAsarHash": "63038125e8210c88aa3006d9cbc2687ae2ae26edc089f94271b41d1bacb8a0af",
+    "removedLaunchableCopy": true,
+    "stillRunning": false
+  }
+]

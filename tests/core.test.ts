@@ -35,13 +35,13 @@ import {
   TURN_LIMIT_SECONDS,
   endpointingReady,
   handsFreeReady,
+  semanticReady,
   shouldReopenMicrophone,
   turnAction,
   withVoiceDependencies,
   type ListeningTurn,
   type ResumeContext,
   WAKE_MODEL,
-  SPEECH_LEVEL,
   NAME_GAP_SECONDS,
   NAME_MAX_SECONDS,
   NAME_MIN_SECONDS,
@@ -54,6 +54,7 @@ import {
   shouldScoreWake,
   shouldWatchForWake,
   wakeReady,
+  KEYWORD_MODEL,
   withListeningDependencies,
   type PlaybackListen,
   type WakeScoring,
@@ -85,6 +86,72 @@ async function until(predicate: () => boolean, message: string) {
   }
 }
 const budget = Settings.parse({}).budget
+test('foreground input cancels remaining startup warmups between roles', async () => {
+  const controller = new AbortController()
+  const roles: string[] = []
+  const models = new Models(
+    '/tmp/jarvis-warm-fixture',
+    '.',
+    () => {},
+    () => {},
+  )
+  Object.assign(models, {
+    process: {
+      request: async (
+        _method: string,
+        params: { roles: string[] },
+        _timeout: number,
+        signal: AbortSignal,
+      ) => {
+        assert.equal(signal, controller.signal)
+        roles.push(...params.roles)
+        controller.abort()
+        return { warmed: params.roles }
+      },
+    },
+  })
+  await assert.rejects(models.warm(['asr', 'reasoning', 'tts'], controller.signal), /abort/i)
+  assert.deepEqual(roles, ['asr'])
+})
+test('local-only transition detects active network effects and clears completed ones', async () => {
+  const db = database()
+  try {
+    const id = uid()
+    const task = Task.parse({
+      id,
+      revision: 1,
+      state: 'running',
+      stage: 'Testing',
+      objective: 'Network boundary fixture',
+      provider: 'local',
+      scope: 'personal',
+      createdAt: now(),
+      updatedAt: now(),
+      budget,
+    })
+    db.store.insertTask(task)
+    assert.equal(db.store.hasInFlightNetworkEffects(), false)
+    const local = db.store.intent(id, null, uid(), {
+      tool: 'agent.command',
+      arguments: { networkAccess: false },
+    })
+    assert.equal(db.store.hasInFlightNetworkEffects(), false)
+    const network = db.store.intent(id, null, uid(), {
+      tool: 'agent.command',
+      arguments: { networkAccess: true },
+    })
+    assert.equal(db.store.hasInFlightNetworkEffects(), true)
+    db.store.finishEffect(network, 'succeeded', {})
+    assert.equal(db.store.hasInFlightNetworkEffects(), false)
+    const mcp = db.store.intent(id, null, uid(), { tool: 'mcp.call', arguments: {} })
+    assert.equal(db.store.hasInFlightNetworkEffects(), true)
+    db.store.finishEffect(mcp, 'failed', {})
+    db.store.finishEffect(local, 'succeeded', {})
+    assert.equal(db.store.hasInFlightNetworkEffects(), false)
+  } finally {
+    db.close()
+  }
+})
 test('literal file content preserves finalized speech and typed wording', () => {
   assert.equal(
     literalFileContent(
@@ -99,6 +166,18 @@ test('literal file content preserves finalized speech and typed wording', () => 
     'A quietly capable companion.',
   )
   assert.equal(literalFileContent('Explain what containing exactly means'), undefined)
+  assert.equal(
+    literalFileContent(
+      'Create a file called voice-check.txt containing exactly "voice test passed".',
+    ),
+    'voice test passed',
+  )
+  assert.equal(
+    literalFileContent(
+      'Create a file called voice-check.txt containing exactly “voice test passed.”',
+    ),
+    'voice test passed.',
+  )
 })
 function memory(text: string, scope = 'personal') {
   return {
@@ -392,6 +471,7 @@ test('file scope rejects traversal, secret paths, and symlink escapes', async ()
   const dir = mkdtempSync(join(tmpdir(), 'jarvis-paths-'))
   const outside = mkdtempSync(join(tmpdir(), 'jarvis-outside-'))
   symlinkSync(outside, join(dir, 'escape'))
+  assert.equal(await scopedPath(dir, '.'), realpathSync(dir))
   await assert.rejects(scopedPath(dir, '../outside.txt'))
   await assert.rejects(scopedPath(dir, '.git/config'))
   await assert.rejects(scopedPath(dir, 'escape/secret.txt'))
@@ -667,7 +747,7 @@ test('provider usage remains cumulative across task revisions', async () => {
 })
 
 test('a model check records what it observed and never runs twice at once', async () => {
-  const manifests: Record<string, { revision: string; qualified: boolean } | undefined> = {
+  const manifests: Record<string, { revision: string; qualified: boolean; qualification?: { detail: string } } | undefined> = {
     silero: { revision: 'silero-1', qualified: false },
     'smart-turn': { revision: 'turn-1', qualified: false },
   }
@@ -693,12 +773,38 @@ test('a model check records what it observed and never runs twice at once', asyn
   assert.equal(models.qualified('smart-turn'), false)
   assert.equal(models.has('kokoro'), false)
   const running = models.qualify('smart-turn')
+  assert.equal(models.records.find((model) => model.id === 'smart-turn')?.checking, true)
   await assert.rejects(models.qualify('smart-turn'), /already being checked/)
+  await assert.rejects(models.qualify('silero'), /current model check/)
   assert.equal((await running).qualified, true)
+  assert.equal(models.records.find((model) => model.id === 'smart-turn')?.checking, false)
   assert.equal(checks, 1)
   assert.equal(models.qualified('smart-turn'), true)
   assert.equal(models.qualified('silero'), false)
   await assert.rejects(models.qualify('nothing-here'), /Unknown model/)
+  manifests.silero!.qualification = { detail: 'Speech detection failed on the test recording.' }
+  await models.refresh()
+  assert.equal(models.records.find((model) => model.id === 'silero')?.error,
+    'Speech detection failed on the test recording.', 'a refresh erased the failed check explanation')
+})
+
+test('a conversation cancels a model check and clears its visible busy state', async () => {
+  const models = new Models(tmpdir(), tmpdir(), () => {}, () => {})
+  let cancelled = false
+  models.process = {
+    request: (_method: string, _params: unknown, _timeout: number, signal: AbortSignal) =>
+      new Promise((_resolve, reject) => signal.addEventListener('abort', () => {
+        cancelled = true
+        reject(new Error('Cancelled.'))
+      }, { once: true })),
+  } as unknown as Models['process']
+  const checking = models.qualify('qwen')
+  const rejected = assert.rejects(checking, /stopped so Jarvis can answer/)
+  assert.equal(models.records.find((model) => model.id === 'qwen')?.checking, true)
+  models.cancelCheck()
+  await rejected
+  assert.equal(cancelled, true)
+  assert.equal(models.records.find((model) => model.id === 'qwen')?.checking, false)
 })
 
 test('note chunking keeps its heading, its frontmatter title, and its credentials out', () => {
@@ -787,11 +893,11 @@ test('an existing database gains the note index without disturbing what it alrea
   db.store.saveMemory(memory('Keep this through the upgrade.'))
   // Return the file to the shape the previous release left behind.
   db.store.db.exec(
-    'DROP TABLE note_fts; DROP TABLE note_chunks; DROP TABLE notes; PRAGMA user_version = 1;',
+    'DROP TABLE message_fts; DROP TABLE note_fts; DROP TABLE note_chunks; DROP TABLE notes; PRAGMA user_version = 1;',
   )
   db.store.close()
   const upgraded = new Store(db.file, db.key)
-  assert.equal(upgraded.db.pragma('user_version', { simple: true }), 2)
+  assert.equal(upgraded.db.pragma('user_version', { simple: true }), 3)
   assert.deepEqual(upgraded.noteSummary(), {
     notes: 0,
     chunks: 0,
@@ -804,6 +910,16 @@ test('an existing database gains the note index without disturbing what it alrea
     { heading: '', text: 'Upgraded index accepts writes.' },
   ])
   assert.equal(upgraded.searchNotes('upgraded index', 'personal').length, 1)
+  // Words said before the upgrade are searchable after it, and new ones as they are saved.
+  upgraded.saveMessage({
+    id: 'm1',
+    role: 'user',
+    text: 'The dentist is on the fourteenth at nine.',
+    createdAt: now(),
+    scope: 'personal',
+  })
+  assert.equal(upgraded.searchMessages('dentist', 'personal')[0]?.id, 'm1')
+  assert.equal(upgraded.searchMessages('dentist', 'work').length, 0)
   upgraded.close()
   db.close()
 })
@@ -1050,17 +1166,21 @@ test('a runtime that answers and then leaves quietly is reported, not treated as
   await until(() => models.failure !== undefined, 'a runtime that left on its own went unreported')
   assert.match(models.failure!, /stopped on its own \(exit 0\)/)
   assert.equal(models.process, undefined)
+  assert.equal(models.ready, false, 'a dead runtime stayed ready')
   rmSync(dir, { recursive: true, force: true })
 })
 
 test('an engine is offered only where what it needs has been observed working', () => {
   const nothing = () => false
   const all = () => true
-  // The separate models are always there; they are what everything else falls back to.
-  assert.equal(engineReady('pipeline', nothing, nothing), true)
+  assert.equal(engineReady('pipeline', nothing, nothing), false)
+  assert.equal(engineReady('pipeline', (id) => id === 'qwen', nothing), false)
+  assert.equal(engineReady('pipeline', (id) => ['qwen', 'whisper'].includes(id), nothing), true)
+  assert.equal(engineReady('pipeline', (id) => ['qwen', 'parakeet'].includes(id), nothing), true)
   assert.equal(engineReady('duplex', nothing, all), false, 'an unqualified model was offered')
+  assert.equal(engineReady('duplex', (id) => id === DUPLEX_MODEL, nothing), false)
   assert.equal(
-    engineReady('duplex', (id) => id === DUPLEX_MODEL, nothing),
+    engineReady('duplex', (id) => [DUPLEX_MODEL, 'whisper'].includes(id), nothing),
     true,
   )
   assert.equal(
@@ -1083,7 +1203,7 @@ test('an engine that is not ready falls back to local, never to the cloud', () =
   )
   assert.equal(engineInUse('realtime', nothing, nothing), 'pipeline')
   assert.equal(
-    engineInUse('duplex', (id) => id === DUPLEX_MODEL, nothing),
+    engineInUse('duplex', (id) => [DUPLEX_MODEL, 'whisper'].includes(id), nothing),
     'duplex',
   )
   assert.equal(
@@ -1095,9 +1215,11 @@ test('an engine that is not ready falls back to local, never to the cloud', () =
 test('a microphone the name opened is closed by silence, not by waiting for a hand', () => {
   const turn = (over: Partial<ListeningTurn>): ListeningTurn => ({
     elapsed: 10,
+    speaking: false,
     lastSpeechAt: 0,
     lastEndpointAt: 0,
     endpointing: false,
+    semantic: false,
     handsFree: false,
     ...over,
   })
@@ -1109,9 +1231,15 @@ test('a microphone the name opened is closed by silence, not by waiting for a ha
   assert.equal(turnAction(turn({ unattended: true, lastSpeechAt: 0, elapsed: 11 })), 'abandon')
   // A turn the person opened themselves still waits for them, as it did before.
   assert.equal(turnAction(turn({ lastSpeechAt: 5, elapsed: 30 })), 'wait')
-  // With endpointing on, the models judge the end of the thought rather than a bare timer.
+  // With endpointing on, silence closes it sooner still, and the turn model sooner than that.
   assert.equal(
     turnAction(turn({ unattended: true, endpointing: true, lastSpeechAt: 5, elapsed: 7.1 })),
+    'finish',
+  )
+  assert.equal(
+    turnAction(
+      turn({ unattended: true, endpointing: true, semantic: true, lastSpeechAt: 5, elapsed: 5.3 }),
+    ),
     'examine',
   )
 })
@@ -1249,7 +1377,11 @@ test('a runtime that is slow to answer is asked again, not killed for being slow
     () => {},
   )
   models.patience = 400
-  assert.equal(await models.start(), true, 'a worker that answered the second ping was given up on')
+  const firstStart = models.start()
+  const secondStart = models.start()
+  assert.equal(models.ready, false, 'a process was considered ready before its handshake')
+  assert.deepEqual(await Promise.all([firstStart, secondStart]), [true, true])
+  assert.equal(models.ready, true)
   assert.equal(models.failure, undefined, 'being slow was reported as a failure')
   assert.ok(models.process, 'a living worker was killed for being slow to answer')
   const log = readFileSync(join(dir, 'runtime.log'), 'utf8')
@@ -1296,34 +1428,47 @@ test('a runtime killed outright is named by its signal, not by an exit code it n
   await until(() => models.failure !== undefined, 'a killed runtime went unreported')
   assert.match(models.failure!, /stopped on its own \(SIGKILL\)/)
   assert.equal(models.process, undefined)
+  assert.equal(models.ready, false)
   rmSync(dir, { recursive: true, force: true })
 })
 
-test('a spoken turn ends on a judged pause, on the recording limit, or on nobody speaking', () => {
+test('a spoken turn ends on a judged pause, on silence, on the recording limit, or on nobody speaking', () => {
   const turn = (over: Partial<ListeningTurn>): ListeningTurn => ({
     elapsed: 1,
+    speaking: false,
     lastSpeechAt: 0,
     lastEndpointAt: 0,
     endpointing: false,
+    semantic: false,
     handsFree: false,
     ...over,
   })
+  const judged = { endpointing: true, semantic: true }
   // Without endpointing a turn only ends when the person says so, or at the recording limit.
   assert.equal(turnAction(turn({ elapsed: 40, lastSpeechAt: 30 })), 'wait')
   assert.equal(turnAction(turn({ elapsed: TURN_LIMIT_SECONDS, lastSpeechAt: 30 })), 'finish')
   assert.equal(turnAction(turn({ elapsed: TURN_LIMIT_SECONDS - 0.1, lastSpeechAt: 30 })), 'wait')
-  // Endpointing examines a pause, and only after somebody has actually spoken.
-  assert.equal(turnAction(turn({ elapsed: 9, lastSpeechAt: 0, endpointing: true })), 'wait')
-  assert.equal(turnAction(turn({ elapsed: 4.1, lastSpeechAt: 3, endpointing: true })), 'wait')
-  assert.equal(turnAction(turn({ elapsed: 4.2, lastSpeechAt: 3, endpointing: true })), 'examine')
-  // One examination at a time: the next waits out the same pause again.
+  // Endpointing waits for somebody to have spoken, and then for them to stop.
+  assert.equal(turnAction(turn({ elapsed: 9, ...judged })), 'wait')
+  assert.equal(turnAction(turn({ elapsed: 9, lastSpeechAt: 3, speaking: true, ...judged })), 'wait')
+  // Silence alone ends the turn, with or without a turn model.
+  assert.equal(turnAction(turn({ elapsed: 4.4, lastSpeechAt: 3, endpointing: true })), 'wait')
+  assert.equal(turnAction(turn({ elapsed: 4.5, lastSpeechAt: 3, endpointing: true })), 'finish')
+  // With a qualified turn model the pause is examined a quarter of a second in, then again later.
+  assert.equal(turnAction(turn({ elapsed: 3.2, lastSpeechAt: 3, ...judged })), 'wait')
+  assert.equal(turnAction(turn({ elapsed: 3.25, lastSpeechAt: 3, ...judged })), 'examine')
   assert.equal(
-    turnAction(turn({ elapsed: 4.5, lastSpeechAt: 3, lastEndpointAt: 4.2, endpointing: true })),
+    turnAction(turn({ elapsed: 3.5, lastSpeechAt: 3, lastEndpointAt: 3.25, ...judged })),
     'wait',
   )
   assert.equal(
-    turnAction(turn({ elapsed: 5.4, lastSpeechAt: 3, lastEndpointAt: 4.2, endpointing: true })),
+    turnAction(turn({ elapsed: 3.7, lastSpeechAt: 3, lastEndpointAt: 3.25, ...judged })),
     'examine',
+  )
+  // The turn model can only end a turn sooner; the silence limit still ends it regardless.
+  assert.equal(
+    turnAction(turn({ elapsed: 4.5, lastSpeechAt: 3, lastEndpointAt: 4.2, ...judged })),
+    'finish',
   )
   // A hands-free microphone opens on its own, so an unanswered one closes on its own.
   assert.equal(
@@ -1334,10 +1479,15 @@ test('a spoken turn ends on a judged pause, on the recording limit, or on nobody
     turnAction(turn({ elapsed: HANDS_FREE_PATIENCE_SECONDS, handsFree: true })),
     'abandon',
   )
+  // Not while somebody is in the middle of their first sentence.
+  assert.equal(
+    turnAction(turn({ elapsed: HANDS_FREE_PATIENCE_SECONDS, handsFree: true, speaking: true })),
+    'wait',
+  )
   // Having heard something, it waits for the endpointer like any other turn.
   assert.equal(
     turnAction(turn({ elapsed: 30, lastSpeechAt: 2, handsFree: true, endpointing: true })),
-    'examine',
+    'finish',
   )
   // A microphone the person opened themselves is left alone until the recording limit.
   assert.equal(turnAction(turn({ elapsed: 60, handsFree: false })), 'wait')
@@ -1349,12 +1499,16 @@ test('hands-free needs qualified endpointing, and never outlives it', () => {
     (id: string) =>
       ids.includes(id)
   assert.equal(endpointingReady(qualified('silero', 'smart-turn')), true)
-  // Smart Turn is installed but unqualified on this Mac, which is the whole point of the gate.
-  assert.equal(endpointingReady(qualified('silero')), false)
+  // Silence closes a turn on its own; the turn model only lets a finished thought close it sooner.
+  assert.equal(endpointingReady(qualified('silero')), true)
+  assert.equal(endpointingReady(qualified('smart-turn')), false)
   assert.equal(endpointingReady(qualified()), false)
+  assert.equal(semanticReady(qualified('silero', 'smart-turn')), true)
+  assert.equal(semanticReady(qualified('silero')), false)
   const on = { automaticEndpointing: true, handsFree: true }
   assert.equal(handsFreeReady(on, qualified('silero', 'smart-turn')), true)
-  assert.equal(handsFreeReady(on, qualified('silero')), false)
+  assert.equal(handsFreeReady(on, qualified('silero')), true)
+  assert.equal(handsFreeReady(on, qualified('smart-turn')), false)
   assert.equal(
     handsFreeReady({ automaticEndpointing: false }, qualified('silero', 'smart-turn')),
     false,
@@ -1389,7 +1543,7 @@ test('the microphone reopens only for a live hands-free session that is not othe
   assert.equal(shouldReopenMicrophone(context({ closing: true })), false)
   assert.equal(shouldReopenMicrophone(context({ automaticEndpointing: false })), false)
   // A model removed mid-session closes the loop rather than leaving a microphone nothing ends.
-  assert.equal(shouldReopenMicrophone(context({ qualified: (id) => id === 'silero' })), false)
+  assert.equal(shouldReopenMicrophone(context({ qualified: (id) => id === 'smart-turn' })), false)
 })
 
 test('reply length carries a ceiling, because an instruction alone drifts', () => {
@@ -1410,7 +1564,8 @@ test('reply length carries a ceiling, because an instruction alone drifts', () =
   )
   // Spoken replies add their own constraint rather than replacing the chosen length.
   assert.match(spokenInstruction(), /no markdown/i)
-  assert.equal(Settings.parse({}).replyLength, 'measured')
+  // Heard rather than read, a reply is short unless the person asks for more.
+  assert.equal(Settings.parse({}).replyLength, 'brief')
 })
 
 test('the microphone listens for the name only when nobody is taking a turn', () => {
@@ -1444,12 +1599,12 @@ test('the microphone listens for the name only when nobody is taking a turn', ()
 test('an idle room never reaches the wake model, and echo never counts as an interruption', () => {
   // Scoring follows speech, and lingers so a name finishing in silence is still in the buffer.
   const score = (over: Partial<WakeScoring>) =>
-    shouldScoreWake({ level: 0, quietSeconds: 10, sinceScoredMs: 1000, ...over })
-  assert.equal(score({ level: SPEECH_LEVEL }), true)
-  assert.equal(score({ level: 0, quietSeconds: 0.5 }), true)
-  assert.equal(score({ level: 0, quietSeconds: 10 }), false)
-  // Never faster than the interval, however loud the room is.
-  assert.equal(score({ level: 1, sinceScoredMs: 10 }), false)
+    shouldScoreWake({ speaking: false, quietSeconds: 10, sinceScoredMs: 1000, ...over })
+  assert.equal(score({ speaking: true, quietSeconds: 0 }), true)
+  assert.equal(score({ speaking: false, quietSeconds: 0.5 }), true)
+  assert.equal(score({ speaking: false, quietSeconds: 10 }), false)
+  // Never faster than the interval, however much is being said.
+  assert.equal(score({ speaking: true, quietSeconds: 0, sinceScoredMs: 10 }), false)
 
   const heard = (over: Partial<PlaybackListen>) =>
     isInterruption({ speechSeconds: 1, elapsed: 5, level: 0.9, playbackLevel: 0.2, ...over })
@@ -1463,6 +1618,25 @@ test('an idle room never reaches the wake model, and echo never counts as an int
   assert.equal(heard({ level: 0.01, playbackLevel: 0 }), false)
   // The start of playback is the worst moment for echo, so it is not listened through.
   assert.equal(heard({ elapsed: 0.1 }), false)
+})
+
+test('custom wake names require the keyword model and preserve name-only matching', () => {
+  const keyword = (id: string) => id === KEYWORD_MODEL || id === 'silero'
+  assert.equal(wakeReady(keyword, 'Friday'), true)
+  assert.equal(nameWakeReady(keyword), false)
+  assert.equal(
+    nameWakeReady((id) => keyword(id) || id === 'whisper'),
+    true,
+  )
+  assert.equal(
+    wakeReady((id) => id === 'openwakeword', 'Friday'),
+    false,
+  )
+  assert.equal(isNameSpoken('Hey Friday!', 'Friday'), true)
+  assert.equal(isNameSpoken('Friday.', 'Friday'), true)
+  assert.equal(isNameSpoken('Jarvis', 'Friday'), false)
+  assert.equal(isNameSpoken('Friday, fix the build', 'Friday'), false)
+  assert.equal(isNameSpoken('It is Friday', 'Friday'), false)
 })
 
 test('waking and interrupting are cleared when the model behind them goes', () => {
@@ -1479,11 +1653,11 @@ test('waking and interrupting are cleared when the model behind them goes', () =
   assert.deepEqual(withListeningDependencies(on, both), on)
   // Losing the wake model takes waking with it and leaves the rest standing.
   assert.deepEqual(
-    withListeningDependencies(on, (id) => id !== WAKE_MODEL),
+    withListeningDependencies(on, (id) => both(id) && id !== WAKE_MODEL),
     // The bare name is heard by the microphone the phrase holds open, so it goes too.
     { ...on, wakeWord: false, wakeOnName: false },
   )
-  // Losing Silero takes both interrupting and, through endpointing, hands-free.
+  // Losing Silero takes interrupting, endpointing, and with endpointing hands-free.
   assert.deepEqual(
     withListeningDependencies(on, (id) => id === WAKE_MODEL),
     // Nothing left that can transcribe, so the bare name goes with the interruption.
@@ -1491,9 +1665,14 @@ test('waking and interrupting are cleared when the model behind them goes', () =
       wakeWord: true,
       wakeOnName: false,
       bargeIn: false,
-      automaticEndpointing: true,
-      handsFree: true,
+      automaticEndpointing: false,
+      handsFree: false,
     },
+  )
+  // The turn model going is not the end of endpointing: silence still closes a turn.
+  assert.deepEqual(
+    withListeningDependencies(on, (id) => id !== 'smart-turn'),
+    on,
   )
   // Switching endpointing off still clears hands-free, and leaves waking alone.
   assert.deepEqual(withListeningDependencies({ ...on, automaticEndpointing: false }, both), {

@@ -1,0 +1,31 @@
+{
+  "generatedAt": "2026-09-12T21:20:36.154Z",
+  "humanSpeechTested": false,
+  "capture": {
+    "inputChannels": [
+      9
+    ],
+    "inputSampleRates": [
+      48000
+    ],
+    "outputSampleRates": [
+      16000,
+      24000
+    ],
+    "peakInputLevel": 0.19394434057176113,
+    "peakPCMLevel": 0.18726095100707246,
+    "recordingChannels": 1
+  },
+  "passed": true,
+  "checks": [
+    "stream starvation",
+    "capture/playback isolation",
+    "single completion",
+    "stale audio rejection",
+    "stale microphone cleanup",
+    "24 kHz capture and playback",
+    "played duration",
+    "non-silent microphone conversion",
+    "mono recognition recording"
+  ]
+}

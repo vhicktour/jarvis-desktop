@@ -51,7 +51,12 @@ def embeddings(mel, wake_path):
 
 def predict(path, wake_path, phrase="hey_jarvis_v0.1.onnx"):
     """The probability that the clip ends with the wake phrase."""
-    audio = read_mono_16k(path)[-SAMPLES_NEEDED:]
+    return predict_samples(read_mono_16k(path), wake_path, phrase)
+
+
+def predict_samples(samples, wake_path, phrase="hey_jarvis_v0.1.onnx"):
+    """Score the live ring without a file or a trip through the generation queue."""
+    audio = samples[-SAMPLES_NEEDED:]
     if len(audio) < 1600:
         return {"score": 0.0, "awake": False}
     if len(audio) < SAMPLES_NEEDED:

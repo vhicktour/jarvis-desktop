@@ -109,7 +109,7 @@ export async function reviewPackage(path: string, baseline: string) {
   )
   return { baseline, revision, diff, untracked }
 }
-export function sandboxProfile(worktree: string, temporary: string) {
+export function sandboxProfile(worktree: string, temporary: string, networkAccess = false) {
   const literal = (value: string) => JSON.stringify(value)
   return `(version 1)
 (deny default)
@@ -118,13 +118,14 @@ export function sandboxProfile(worktree: string, temporary: string) {
 (allow file-read* (literal "/"))
 (allow file-read* (subpath "/System") (subpath "/usr") (subpath "/bin") (subpath "/sbin") (subpath "/Library/Apple") (subpath "/Library/Developer") (subpath "/Applications/Xcode.app") (subpath "/opt/homebrew") (subpath "/dev") (subpath ${literal(worktree)}) (subpath ${literal(temporary)}))
 (allow file-write* (subpath ${literal(worktree)}) (subpath ${literal(temporary)}) (literal "/dev/null"))
-(deny network*)`
+${networkAccess ? '(allow network*)' : '(deny network*)'}`
 }
 export async function runCheck(
   worktree: string,
   command: string,
   temporary: string,
   signal: AbortSignal,
+  networkAccess = false,
 ) {
   signal.throwIfAborted()
   await mkdir(temporary, { recursive: true, mode: 0o700 })
@@ -133,7 +134,7 @@ export async function runCheck(
   return new Promise<{ output: string; exitCode: number | null }>((resolve, reject) => {
     const child = spawn(
       '/usr/bin/sandbox-exec',
-      ['-p', sandboxProfile(worktree, temporary), '/bin/zsh', '-f', '-c', command],
+      ['-p', sandboxProfile(worktree, temporary, networkAccess), '/bin/zsh', '-f', '-c', command],
       {
         cwd: worktree,
         detached: true,

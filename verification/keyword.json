@@ -1,0 +1,191 @@
+{
+  "generatedAt": "2026-09-12T17:39:43.553Z",
+  "humanSpeechTested": false,
+  "scope": "Generated phrases streamed through the real listener, including a custom name, bare-name confirmation with Whisper, a confusing negative, disabled bare wake, and keyword detection during Qwen generation.",
+  "cases": [
+    {
+      "name": "Jarvis",
+      "text": "Hey Jarvis.",
+      "bare": true,
+      "expected": true,
+      "confirmed": true,
+      "wakes": [
+        {
+          "generation": 1,
+          "detector": "keyword",
+          "awake": true,
+          "nameOnly": false,
+          "elapsedMs": 2055.637499999997,
+          "whileGenerating": false
+        }
+      ],
+      "health": {
+        "generation": 1,
+        "detector": "keyword",
+        "frames": 97,
+        "speechFrames": 31,
+        "droppedFrames": 0
+      }
+    },
+    {
+      "name": "Jarvis",
+      "text": "Jarvis.",
+      "bare": true,
+      "expected": true,
+      "confirmed": true,
+      "transcript": "Jarvis.",
+      "wakes": [
+        {
+          "generation": 2,
+          "detector": "keyword",
+          "awake": true,
+          "nameOnly": true,
+          "elapsedMs": 1736.351208,
+          "whileGenerating": false
+        }
+      ],
+      "health": {
+        "generation": 2,
+        "detector": "keyword",
+        "frames": 65,
+        "speechFrames": 21,
+        "droppedFrames": 0
+      }
+    },
+    {
+      "name": "Friday",
+      "text": "Hey Friday.",
+      "bare": true,
+      "expected": true,
+      "confirmed": true,
+      "wakes": [
+        {
+          "generation": 3,
+          "detector": "keyword",
+          "awake": true,
+          "nameOnly": false,
+          "elapsedMs": 1734.7848749999976,
+          "whileGenerating": true
+        }
+      ],
+      "health": {
+        "generation": 3,
+        "detector": "keyword",
+        "frames": 97,
+        "speechFrames": 31,
+        "droppedFrames": 0
+      }
+    },
+    {
+      "name": "Friday",
+      "text": "Friday.",
+      "bare": true,
+      "expected": true,
+      "confirmed": true,
+      "transcript": "Friday.",
+      "wakes": [
+        {
+          "generation": 4,
+          "detector": "keyword",
+          "awake": true,
+          "nameOnly": true,
+          "elapsedMs": 1416.268250000001,
+          "whileGenerating": false
+        }
+      ],
+      "health": {
+        "generation": 4,
+        "detector": "keyword",
+        "frames": 65,
+        "speechFrames": 22,
+        "droppedFrames": 0
+      }
+    },
+    {
+      "name": "Friday",
+      "text": "Hey Jarvis.",
+      "bare": true,
+      "expected": false,
+      "confirmed": false,
+      "wakes": [],
+      "health": {
+        "generation": 5,
+        "detector": "keyword",
+        "frames": 97,
+        "speechFrames": 31,
+        "droppedFrames": 0
+      }
+    },
+    {
+      "name": "Friday",
+      "text": "Jarvis.",
+      "bare": true,
+      "expected": false,
+      "confirmed": false,
+      "wakes": [],
+      "health": {
+        "generation": 6,
+        "detector": "keyword",
+        "frames": 65,
+        "speechFrames": 21,
+        "droppedFrames": 0
+      }
+    },
+    {
+      "name": "Jarvis",
+      "text": "Jarvis.",
+      "bare": false,
+      "expected": false,
+      "confirmed": false,
+      "wakes": [],
+      "health": {
+        "generation": 7,
+        "detector": "keyword",
+        "frames": 65,
+        "speechFrames": 21,
+        "droppedFrames": 0
+      }
+    },
+    {
+      "name": "Jarvis",
+      "text": "Your service.",
+      "bare": true,
+      "expected": false,
+      "confirmed": false,
+      "transcript": "Your service.",
+      "wakes": [
+        {
+          "generation": 8,
+          "detector": "keyword",
+          "awake": true,
+          "nameOnly": true,
+          "elapsedMs": 2054.9720830000006,
+          "whileGenerating": false
+        }
+      ],
+      "health": {
+        "generation": 8,
+        "detector": "keyword",
+        "frames": 65,
+        "speechFrames": 25,
+        "droppedFrames": 0
+      }
+    },
+    {
+      "name": "Jarvis",
+      "text": "What is the capital of France?",
+      "bare": true,
+      "expected": false,
+      "confirmed": false,
+      "wakes": [],
+      "health": {
+        "generation": 9,
+        "detector": "keyword",
+        "frames": 129,
+        "speechFrames": 60,
+        "droppedFrames": 0
+      }
+    }
+  ],
+  "passed": true
+}

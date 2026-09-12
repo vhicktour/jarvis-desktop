@@ -1,0 +1,103 @@
+{
+  "generatedAt": "2026-09-12T21:27:13.215Z",
+  "humanSpeechTested": false,
+  "scope": "Typed and synthesized speech through the current service, local models, native playback, memory and a scoped file effect. An installed path checks bundled workers and native helpers, not the installed UI. Microphone input simulated, not human acoustic qualification.",
+  "cases": [
+    {
+      "input": "What is two plus two?",
+      "reply": "Four.",
+      "firstPlaybackMs": 1125
+    },
+    {
+      "input": "Double that number.",
+      "reply": "Eight.",
+      "firstPlaybackMs": 735
+    },
+    {
+      "input": "Remember that my test bicycle is blue.",
+      "reply": "I’ll remember that. You can change or forget it in Settings.",
+      "firstPlaybackMs": 1696
+    },
+    {
+      "input": "What colour is my test bicycle?",
+      "reply": "Blue.",
+      "firstPlaybackMs": 930
+    }
+  ],
+  "microphonePermissionResult": "granted",
+  "foregroundCancelledModelCheck": true,
+  "action": {
+    "objective": "Create a file called voice-check.txt containing exactly \"voice test passed\".",
+    "contents": "voice test passed",
+    "receipt": {
+      "id": "e76bbcdf-122a-481c-a7c8-84942a0a1042",
+      "taskId": "3f8b7b40-197b-4f51-b13b-abb93d046bc2",
+      "revision": 1,
+      "status": "completed",
+      "objective": "Create a file called voice-check.txt containing exactly \"voice test passed\".",
+      "provider": "local",
+      "providerIds": {},
+      "createdAt": "2026-09-12T21:27:48.122Z",
+      "evidence": [
+        {
+          "id": "9cdb1805-9a70-4a1f-9f18-7b12f2fdc7c6",
+          "kind": "file",
+          "label": "Verified voice-check.txt",
+          "value": "voice test passed",
+          "hash": "baa99e8319d0d0af7412485294b90715174279bd4e0fb199cdbb1a524ce7afeb",
+          "revision": 1,
+          "verified": true
+        }
+      ],
+      "effects": [
+        "Create voice-check.txt"
+      ],
+      "limitations": [],
+      "summary": "Created voice-check.txt and checked its contents.",
+      "costUsd": null
+    }
+  },
+  "wakeChecks": [
+    {
+      "input": "Hey Friday.",
+      "nameAcknowledged": true,
+      "followup": "Paris."
+    },
+    {
+      "input": "Friday.",
+      "nameAcknowledged": true,
+      "followup": "Paris."
+    }
+  ],
+  "preparedConversationTokens": [
+    {
+      "promptTokens": 314,
+      "cachedTokens": 236
+    },
+    {
+      "promptTokens": 330,
+      "cachedTokens": 254
+    },
+    {
+      "promptTokens": 401,
+      "cachedTokens": 302
+    },
+    {
+      "promptTokens": 479,
+      "cachedTokens": 0
+    },
+    {
+      "promptTokens": 498,
+      "cachedTokens": 384
+    }
+  ],
+  "passed": true,
+  "notices": [
+    "Qwen 3.5: Loading Qwen 3.5",
+    "Qwen 3.5: Checking a determinate answer",
+    "Check stopped so Jarvis can answer you. Run it again when the conversation is finished.",
+    "Heard “Friday”.",
+    "Heard “Friday”."
+  ],
+  "runtimeLog": "2026-09-12T21:27:04.172Z Starting the model runtime (pid 54052).\n2026-09-12T21:27:04.320Z The runtime answered in 0.15 s.\n2026-09-12T21:27:13.768Z Starting the model runtime (pid 54094).\n2026-09-12T21:27:13.770Z The runtime process ended (SIGTERM), because Jarvis asked it to.\n2026-09-12T21:27:13.844Z The runtime answered in 0.08 s.\n2026-09-12T21:27:13.847Z Wake word is off in Settings, so nothing is listening for the name. Engine: pipeline.\n2026-09-12T21:27:13.847Z Endpointing is on (silero qualified: true, finishing on meaning: true).\n2026-09-12T21:27:25.209Z Warmed 3 roles in 11.4 s.\n2026-09-12T21:27:27.259Z Prepared local conversation: {\"prepared\":true,\"promptTokens\":237,\"cachedTokens\":0,\"elapsedMs\":2006}\n2026-09-12T21:27:28.051Z Listening for the wake word (echo cancellation on, replies through the engine: yes).\n2026-09-12T21:27:28.231Z Wake listener receiving microphone frames (vad, generation 1).\n2026-09-12T21:27:28.706Z Voice model timing: {\"conversationId\":\"3c4a1899-feba-4e5d-b324-b323e67d2e1e\",\"queueMs\":0,\"firstTokenMs\":430,\"synthesisMs\":177,\"totalMs\":652,\"promptCharacters\":1299,\"promptTokens\":314,\"cachedTokens\":236,\"residentMB\":{\"whisper\":481,\"qwen\":3061,\"kokoro\":355}}\n2026-09-12T21:27:28.998Z Local reply reached native playback in 1124 ms (3c4a1899-feba-4e5d-b324-b323e67d2e1e).\n2026-09-12T21:27:29.869Z Prepared local conversation: {\"prepared\":true,\"promptTokens\":255,\"cachedTokens\":0,\"elapsedMs\":869}\n2026-09-12T21:27:30.325Z Stopped listening for the wake word.\n2026-09-12T21:27:31.887Z Listening for the wake word (echo cancellation on, replies through the engine: yes).\n2026-09-12T21:27:32.019Z Wake listener receiving microphone frames (vad, generation 2).\n2026-09-12T21:27:32.595Z Voice model timing: {\"conversationId\":\"55907d11-d134-439d-8ecd-6646b2ebde75\",\"queueMs\":0,\"firstTokenMs\":550,\"synthesisMs\":114,\"totalMs\":707,\"promptCharacters\":1384,\"promptTokens\":330,\"cachedTokens\":254,\"residentMB\":{\"whisper\":481,\"qwen\":3061,\"kokoro\":355}}\n2026-09-12T21:27:32.618Z Local reply reached native playback in 734 ms (55907d11-d134-439d-8ecd-6646b2ebde75).\n2026-09-12T21:27:33.554Z Prepared local conversation: {\"prepared\":true,\"promptTokens\":271,\"cachedTokens\":0,\"elapsedMs\":935}\n2026-09-12T21:27:33.770Z Stopped listening for the wake word.\n2026-09-12T21:27:35.398Z Listening for the wake word (echo cancellation on, replies through the engine: yes).\n2026-09-12T21:27:35.432Z Wake listener receiving microphone frames (vad, generation 3).\n2026-09-12T21:27:39.624Z Prepared local conversation: {\"prepared\":true,\"promptTokens\":303,\"cachedTokens\":0,\"elapsedMs\":2540}\n2026-09-12T21:27:41.637Z Stopped listening for the wake word.\n2026-09-12T21:27:43.312Z Listening for the wake word (echo cancellation on, replies through the engine: yes).\n2026-09-12T21:27:43.402Z Wake listener receiving microphone frames (vad, generation 4).\n2026-09-12T21:27:44.123Z Voice model timing: {\"conversationId\":\"7c2b58b6-88b5-4224-856f-ad05e856e695\",\"queueMs\":0,\"firstTokenMs\":614,\"synthesisMs\":152,\"totalMs\":810,\"promptCharacters\":1701,\"promptTokens\":401,\"cachedTokens\":302,\"residentMB\":{\"whisper\":481,\"qwen\":3061,\"kokoro\":355,\"embedding\":351}}\n2026-09-12T21:27:44.144Z Local reply reached native playback in 930 ms (7c2b58b6-88b5-4224-856f-ad05e856e695).\n2026-09-12T21:27:45.294Z Prepared local conversation: {\"prepared\":true,\"promptTokens\":322,\"cachedTokens\":0,\"elapsedMs\":1149}\n2026-09-12T21:27:45.499Z Stopped listening for the wake word.\n2026-09-12T21:27:47.015Z Voice recording opened (capture 5, wake false, pre-roll false).\n2026-09-12T21:27:47.033Z Listening for the wake word (echo cancellation on, replies through the engine: yes).\n2026-09-12T21:27:47.041Z Wake listener receiving microphone frames (vad, generation 6).\n2026-09-12T21:27:48.168Z Listening for the wake word (echo cancellation on, replies through the engine: yes).\n2026-09-12T21:27:48.673Z Wake listener receiving microphone frames (keyword, generation 7).\n2026-09-12T21:27:55.037Z Heard wake name (keyword, generation 7).\n2026-09-12T21:27:55.037Z Voice recording opened (capture 8, wake true, pre-roll true).\n2026-09-12T21:27:56.605Z Voice recording closed (capture 8, wake true).\n2026-09-12T21:27:56.802Z Local recognition finished (2 words, name only true).\n2026-09-12T21:27:56.806Z Listening for the wake word (echo cancellation on, replies through the engine: yes).\n2026-09-12T21:27:56.839Z Wake listener receiving microphone frames (vad, generation 9).\n2026-09-12T21:27:58.680Z Voice recording opened (capture 10, wake false, pre-roll true).\n2026-09-12T21:28:02.034Z Voice recording closed (capture 10, wake false).\n2026-09-12T21:28:02.650Z Local recognition finished (6 words, name only false).\n2026-09-12T21:28:02.778Z Listening for the wake word (echo cancellation on, replies through the engine: yes).\n2026-09-12T21:28:03.769Z Wake listener receiving microphone frames (vad, generation 11).\n2026-09-12T21:28:05.497Z Voice model timing: {\"conversationId\":\"12a8f723-9019-4a99-9007-bd7d8e2dc8f7\",\"queueMs\":0,\"firstTokenMs\":2534,\"synthesisMs\":140,\"totalMs\":2718,\"promptCharacters\":2111,\"promptTokens\":479,\"cachedTokens\":0,\"residentMB\":{\"whisper\":481,\"qwen\":3061,\"kokoro\":355,\"embedding\":351}}\n2026-09-12T21:28:05.544Z Local reply reached native playback in 3510 ms (12a8f723-9019-4a99-9007-bd7d8e2dc8f7).\n2026-09-12T21:28:05.847Z Wake listener receiving microphone frames (keyword, generation 11).\n2026-09-12T21:28:06.770Z Prepared local conversation: {\"prepared\":true,\"promptTokens\":385,\"cachedTokens\":0,\"elapsedMs\":1225}\n2026-09-12T21:28:07.834Z Bare wake candidate confirmed locally.\n2026-09-12T21:28:07.834Z Voice recording opened (capture 12, wake true, pre-roll true).\n2026-09-12T21:28:09.390Z Voice recording closed (capture 12, wake true).\n2026-09-12T21:28:09.569Z Local recognition finished (1 words, name only true).\n2026-09-12T21:28:09.570Z Listening for the wake word (echo cancellation on, replies through the engine: yes).\n2026-09-12T21:28:09.591Z Wake listener receiving microphone frames (vad, generation 13).\n2026-09-12T21:28:11.446Z Voice recording opened (capture 14, wake false, pre-roll true).\n2026-09-12T21:28:14.730Z Voice recording closed (capture 14, wake false).\n2026-09-12T21:28:15.191Z Local recognition finished (6 words, name only false).\n2026-09-12T21:28:15.324Z Listening for the wake word (echo cancellation on, replies through the engine: yes).\n2026-09-12T21:28:15.328Z Wake listener receiving microphone frames (vad, generation 15).\n2026-09-12T21:28:16.684Z Voice model timing: {\"conversationId\":\"5ee2118f-f1e1-4609-a730-e0e069c05f12\",\"queueMs\":0,\"firstTokenMs\":1180,\"synthesisMs\":138,\"totalMs\":1360,\"promptCharacters\":2208,\"promptTokens\":498,\"cachedTokens\":384,\"residentMB\":{\"whisper\":481,\"qwen\":3061,\"kokoro\":355,\"embedding\":351}}\n2026-09-12T21:28:16.734Z Local reply reached native playback in 2004 ms (5ee2118f-f1e1-4609-a730-e0e069c05f12).\n2026-09-12T21:28:16.740Z Stopped listening for the wake word.\n"
+}

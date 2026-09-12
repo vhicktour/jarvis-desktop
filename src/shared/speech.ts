@@ -43,6 +43,20 @@ export type ConversationEngine = 'pipeline' | 'duplex' | 'realtime'
 /** The one duplex profile installed here; the catalogue's others have no adapter yet. */
 export const DUPLEX_MODEL = 'lfm'
 
+/** Components used together by the standard local voice route. */
+export const LOCAL_VOICE_MODELS = [
+  'whisper',
+  'qwen',
+  'kokoro',
+  'silero',
+  'smart-turn',
+  'keyword',
+] as const
+
+export function localVoiceReady(qualified: (id: string) => boolean) {
+  return qualified('qwen') && (qualified('whisper') || qualified('parakeet'))
+}
+
 /**
  * An engine is offered only where what it needs has been observed working on this Mac. The duplex
  * model has to have passed its own checks, and the cloud engine has to actually be connected.
@@ -52,9 +66,10 @@ export function engineReady(
   qualified: (id: string) => boolean,
   connected: (id: string) => boolean,
 ) {
-  if (engine === 'duplex') return qualified(DUPLEX_MODEL)
+  if (engine === 'duplex')
+    return qualified(DUPLEX_MODEL) && (qualified('whisper') || qualified('parakeet'))
   if (engine === 'realtime') return connected('openai-realtime')
-  return true
+  return localVoiceReady(qualified)
 }
 
 /** Which engine actually runs, given what is ready. Nothing silently falls back to the cloud. */

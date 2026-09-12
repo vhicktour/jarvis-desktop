@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Check, ChevronRight, FolderGit2, KeyRound, Plus, X } from 'lucide-react'
 import type { Connection } from '../../../shared/contracts'
 import { useJarvis } from '../state'
@@ -71,7 +71,7 @@ function ConnectionRow({ connection }: { connection: Connection }) {
           variant={connected ? 'ghost' : 'secondary'}
           busy={connection.status === 'connecting'}
           onPress={() => {
-            if (connected || ['claude', 'google', 'mcp'].includes(connection.id))
+            if (connected || ['claude', 'openai-realtime', 'google', 'mcp'].includes(connection.id))
               setExpanded(!expanded)
             else void connect()
           }}
@@ -141,7 +141,7 @@ function ConnectionRow({ connection }: { connection: Connection }) {
                 type={connection.id === 'mcp' ? 'text' : 'password'}
                 description={
                   connection.id === 'mcp'
-                    ? 'Connected tools are inspected before any execution is enabled.'
+                    ? 'Tasks can use connected tools after you review each exact call.'
                     : 'Stored in your macOS Keychain.'
                 }
               />
@@ -199,8 +199,8 @@ export function Connections() {
             <ConnectionRow key={connection.id} connection={connection} />
           ))}
         <Row
-          title="Maximum spend per task"
-          description="Tasks stop at their configured usage or time ceiling."
+          title="Usage ceiling per task or voice session"
+          description="Stops at reported usage. Delayed billing and transcription can exceed the estimate; set account limits with the provider too."
         >
           <div className="budget-input">
             <span>$</span>
@@ -286,6 +286,55 @@ export function Connections() {
             <ConnectionRow key={connection.id} connection={connection} />
           ))}
       </Group>
+      <InstalledSkills />
     </>
+  )
+}
+
+function InstalledSkills() {
+  const { command, snapshot, busy } = useJarvis()
+  const [skills, setSkills] = useState<{ name: string; description: string; hash: string }[]>([])
+  const refresh = async () => {
+    const result = await command<typeof skills>({ type: 'skills.list' })
+    if (result) setSkills(result)
+  }
+  useEffect(() => {
+    void refresh()
+  }, [command])
+  return (
+    <Group
+      title="Skills"
+      detail="Ask Jarvis to install a SKILL.md package from your selected project. You review its contents before installation. Scripts run only as separately reviewed task commands."
+    >
+      {skills.map((skill) => (
+        <Row key={skill.name} title={skill.name} description={skill.description}>
+          <Button
+            onPress={() => {
+              void command({
+                type: 'task.create',
+                provider: 'local',
+                projectId: snapshot.activeProjectId,
+                objective: `Remove the installed Jarvis skill named ${skill.name}.`,
+              })
+            }}
+          >
+            Review removal
+          </Button>
+        </Row>
+      ))}
+      <Row
+        title={skills.length ? `${skills.length} installed` : 'No skills installed'}
+        description="Connected MCP servers provide tools; skills provide reusable instructions."
+      >
+        <Button
+          busy={busy.has('skills.list')}
+          onPress={() => {
+            void refresh()
+          }}
+        >
+          Refresh skills
+        </Button>
+      </Row>
+    </Group>
   )
 }

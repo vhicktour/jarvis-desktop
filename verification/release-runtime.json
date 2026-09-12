@@ -1,0 +1,20 @@
+{
+  "generatedAt": "2026-09-12T16:15:33.112Z",
+  "installed": "/Users/victor/Applications/Jarvis.app",
+  "signature": "Developer ID, deep strict verification passed",
+  "notarized": false,
+  "checks": [
+    {
+      "exitCode": 0,
+      "output": "Bundled Python imports MLX and ONNX Runtime 1.29.0"
+    },
+    {
+      "exitCode": 0,
+      "output": "codex-cli 0.143.0"
+    },
+    {
+      "exitCode": 0,
+      "output": "2.1.267 (Claude Code)"
+    }
+  ]
+}

@@ -1,0 +1,72 @@
+{
+  "generatedAt": "2026-09-12T16:02:41.168Z",
+  "profile": "/Users/victor/Library/Application Support/Jarvis",
+  "packaged": true,
+  "bundleHashes": {
+    "app.asar": "6d509898ce8ad4b38e9a6fc5692330de596ed82f0650b73f5a4cef8019c41b85",
+    "workers/models.py": "baf1ece8111e30ee31d85f0a73cfbef728465ef42b9ac5bf7e2f5c4a0971a979",
+    "workers/listen.py": "1f4d9eaa69f95114d14953c1ce203eff6c6cd63328ffcb1ff0ebd935f4f1cefd",
+    "native/JarvisNative": "28ac4fff708c99292d2dff9c183cfa957ad55cdf6bcbf15885791310dd0b67f3"
+  },
+  "humanSpeechTested": false,
+  "checks": [
+    "The launch orb retains its 72-point geometry",
+    "Ten qualified models available through the service",
+    "Natural conversation button enables listening through the real native helper",
+    "Text to reasoning to streamed native playback completes twice",
+    "Typed stop can end an active microphone turn",
+    "Natural local conversation enabled in the installed app"
+  ],
+  "turns": [
+    {
+      "input": "What is two plus two?",
+      "reply": "Four.",
+      "firstTextMs": 6001.29999999702,
+      "firstPlaybackStateMs": 8881.79999999702,
+      "maxReply": "Four."
+    },
+    {
+      "input": "What is one useful tip for naming a function?",
+      "reply": "Use descriptive names that clearly indicate the function's purpose or effect.",
+      "firstTextMs": 4163.5999999940395,
+      "firstPlaybackStateMs": 5078.399999991059,
+      "maxReply": "Use descriptive names that clearly indicate the function's purpose or effect."
+    }
+  ],
+  "accessibility": [
+    {
+      "section": "General",
+      "violations": []
+    },
+    {
+      "section": "Voice & sound",
+      "violations": []
+    },
+    {
+      "section": "Local models",
+      "violations": []
+    },
+    {
+      "section": "Connections",
+      "violations": []
+    },
+    {
+      "section": "Memory",
+      "violations": []
+    },
+    {
+      "section": "Routines",
+      "violations": []
+    },
+    {
+      "section": "Privacy & access",
+      "violations": []
+    },
+    {
+      "section": "Diagnostics",
+      "violations": []
+    }
+  ],
+  "passed": true,
+  "diagnostics": []
+}

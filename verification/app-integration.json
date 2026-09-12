@@ -1,0 +1,66 @@
+{
+  "generatedAt": "2026-09-12T15:41:08.091Z",
+  "profile": "/Users/victor/personal/Jarvis/verification/private/app-qa",
+  "packaged": false,
+  "humanSpeechTested": false,
+  "checks": [
+    "The launch orb retains its 72-point geometry",
+    "Ten qualified models available through the service",
+    "Natural conversation button enables listening through the real native helper",
+    "OpenAI credential form opens; skills list renders",
+    "Text to reasoning to streamed native playback completes twice",
+    "Typed stop can end an active microphone turn"
+  ],
+  "turns": [
+    {
+      "input": "What is two plus two?",
+      "reply": "Four.",
+      "firstTextMs": 2615.300000011921,
+      "firstPlaybackStateMs": 2793.300000011921,
+      "maxReply": "Four."
+    },
+    {
+      "input": "What is one useful tip for naming a function?",
+      "reply": "Name functions to describe what they do, not how.",
+      "firstTextMs": 3525.0999999940395,
+      "firstPlaybackStateMs": 4218,
+      "maxReply": "Name functions to describe what they do, not how."
+    }
+  ],
+  "accessibility": [
+    {
+      "section": "General",
+      "violations": []
+    },
+    {
+      "section": "Voice & sound",
+      "violations": []
+    },
+    {
+      "section": "Local models",
+      "violations": []
+    },
+    {
+      "section": "Connections",
+      "violations": []
+    },
+    {
+      "section": "Memory",
+      "violations": []
+    },
+    {
+      "section": "Routines",
+      "violations": []
+    },
+    {
+      "section": "Privacy & access",
+      "violations": []
+    },
+    {
+      "section": "Diagnostics",
+      "violations": []
+    }
+  ],
+  "passed": true,
+  "diagnostics": []
+}

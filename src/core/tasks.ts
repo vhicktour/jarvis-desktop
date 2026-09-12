@@ -544,6 +544,7 @@ export class TaskEngine {
       status: task.state,
       objective: task.objective,
       provider: task.provider,
+      providerIds: task.providerIds,
       createdAt: now(),
       evidence: task.evidence,
       effects: task.completedEffects,

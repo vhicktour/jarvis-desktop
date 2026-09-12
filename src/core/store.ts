@@ -76,7 +76,7 @@ export class Store {
 
   private migrate() {
     const version = this.db.pragma('user_version', { simple: true }) as number
-    invariant(version <= 2, 'This database was created by a newer version of Jarvis.')
+    invariant(version <= 3, 'This database was created by a newer version of Jarvis.')
     if (version < 1) this.createSchema()
     // Indexed notes are derived from files the user still owns, so this migration adds no data.
     if (version < 2)
@@ -87,6 +87,16 @@ export class Store {
         CREATE VIRTUAL TABLE note_fts USING fts5(id UNINDEXED, scope UNINDEXED, text);
         CREATE INDEX note_chunk_note ON note_chunks(note_id);
         PRAGMA user_version = 2;
+      `)
+      })()
+    // What was said earlier becomes searchable, so a turn can recall a conversation from last
+    // week and not only the facts distilled from it. Built from the transcripts already held.
+    if (version < 3)
+      this.db.transaction(() => {
+        this.db.exec(`
+        CREATE VIRTUAL TABLE message_fts USING fts5(id UNINDEXED, scope UNINDEXED, text);
+        INSERT INTO message_fts SELECT id, scope, json_extract(payload, '$.text') FROM messages;
+        PRAGMA user_version = 3;
       `)
       })()
   }
@@ -260,6 +270,11 @@ export class Store {
       }[]
     ).map((row) => ({ ...row, payload: JSON.parse(row.payload) }))
   }
+  hasInFlightNetworkEffects() {
+    return !!this.db.prepare(`SELECT 1 FROM effects WHERE state='intent' AND
+      (json_extract(payload, '$.tool')='mcp.call' OR
+       json_extract(payload, '$.arguments.networkAccess')=1) LIMIT 1`).get()
+  }
   saveReceipt(receipt: ActionReceipt) {
     this.db
       .prepare('INSERT INTO receipts VALUES (?, ?, ?, ?)')
@@ -272,11 +287,31 @@ export class Store {
   }
   saveMessage(message: Message) {
     const { streaming: _, ...persistent } = message
-    this.db
-      .prepare(
-        'INSERT INTO messages VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload',
-      )
-      .run(message.id, message.scope, message.createdAt, JSON.stringify(persistent))
+    this.db.transaction(() => {
+      this.db
+        .prepare(
+          'INSERT INTO messages VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload',
+        )
+        .run(message.id, message.scope, message.createdAt, JSON.stringify(persistent))
+      this.db.prepare('DELETE FROM message_fts WHERE id=?').run(message.id)
+      this.db
+        .prepare('INSERT INTO message_fts VALUES (?, ?, ?)')
+        .run(message.id, message.scope, message.text)
+    })()
+  }
+  /** Earlier exchanges that speak to the query: the words themselves, newest of the best first. */
+  searchMessages(query: string, scope: string, limit = 3): Message[] {
+    const ids = this.matchText('message_fts', query, scope, limit * 4)
+    if (!ids.length) return []
+    const found = new Map(
+      (
+        this.rows(
+          `SELECT payload FROM messages WHERE id IN (${ids.map(() => '?').join(',')})`,
+          ...ids,
+        ) as Message[]
+      ).map((m) => [m.id, m]),
+    )
+    return ids.flatMap((id) => (found.has(id) ? [found.get(id)!] : [])).slice(0, limit)
   }
   messages(scope: string): Message[] {
     return (
@@ -362,8 +397,12 @@ export class Store {
       }
       const removed = new Set(removedIds)
       const deleteMessage = this.db.prepare('DELETE FROM messages WHERE id=?')
+      const deleteSearch = this.db.prepare('DELETE FROM message_fts WHERE id=?')
       for (const message of this.rows('SELECT payload FROM messages') as Message[]) {
-        if (message.sources?.some((source) => removed.has(source.id))) deleteMessage.run(message.id)
+        if (message.sources?.some((source) => removed.has(source.id))) {
+          deleteMessage.run(message.id)
+          deleteSearch.run(message.id)
+        }
       }
     })()
     this.db.pragma('wal_checkpoint(TRUNCATE)')
@@ -383,8 +422,13 @@ export class Store {
       conversations: this.rows('SELECT payload FROM messages ORDER BY created_at'),
     }
   }
-  /** The table name is one of two literals in this file; only the query text is user input. */
-  private matchText(table: 'memory_fts' | 'note_fts', query: string, scope: string, limit = 30) {
+  /** The table name is one of three literals in this file; only the query text is user input. */
+  private matchText(
+    table: 'memory_fts' | 'note_fts' | 'message_fts',
+    query: string,
+    scope: string,
+    limit = 30,
+  ) {
     const words = query.match(/[\p{L}\p{N}_-]+/gu)?.slice(0, 20) ?? []
     if (!words.length) return []
     return (
@@ -612,6 +656,7 @@ export class Store {
       this.db
         .prepare('DELETE FROM messages WHERE created_at < ?')
         .run(cutoff(settings.transcriptDays))
+      this.db.exec('DELETE FROM message_fts WHERE id NOT IN (SELECT id FROM messages)')
       this.db
         .prepare(
           "DELETE FROM tasks WHERE updated_at < ? AND state IN ('completed','cancelled','failed')",

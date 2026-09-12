@@ -208,12 +208,14 @@ async function start() {
       return
     }
     if (message.event) {
+      if (quitting) return
       const event = message.event as AppEvent
       if (event.type === 'snapshot') {
         const previousApproval = snapshot.approvals[0]?.id
         snapshot = event.snapshot
         snapshot.diagnostics = {
           ...snapshot.diagnostics,
+          applicationPath: app.isPackaged ? dirname(dirname(process.resourcesPath)) : app.getAppPath(),
           glass: windows.glass,
           native: nativeAlive,
           platform: `macOS ${process.getSystemVersion()}`,

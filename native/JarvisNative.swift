@@ -111,13 +111,36 @@ final class AudioHistory {
     // Sentences of one reply, waiting their turn. A reply spoken in pieces is still one utterance,
     // so it keeps one generation and reports finishing once, when the last piece has played.
     var playbackQueue: [URL] = []
+    /**
+     * While the microphone is open, replies play through the engine's own output, because that is
+     * the signal Apple's echo cancellation subtracts. A player outside the engine reaches the
+     * speaker by a route the canceller never sees, and the open microphone would hear the reply as
+     * somebody talking.
+     */
+    let playerNode = AVAudioPlayerNode()
+    var playerAttached = false
+    var playerFormat: AVAudioFormat?
+    var nodeSession = 0
+    /** Pieces scheduled on the player node that have not finished playing. */
+    var nodePending = 0
+    var nodeDurations: [Double] = []
+    /** The engine was asked to stop while a reply was still playing through it. */
+    var stopEngineWhenIdle = false
     /** Whether Apple's echo cancellation is actually on, which is not the same as having asked. */
     var voiceProcessing = false
     /** Listening with nowhere to write: the rolling history only, so nothing reaches disk. */
     var listening = false
     var playbackMeter: Timer?
     var audioHistory: AudioHistory?
+    var captureGeneration = 0
+    var captureRate: Double = 16000
     var generation = 0
+    var streamGeneration: Int?
+    var completionReported = true
+    var playbackEpoch = 0
+    var playedSeconds: Double = 0
+    var pieceStartedAt: Date?
+    var pieceDuration: Double = 0
     let ephemeral: URL
     override init() {
         let supplied = CommandLine.arguments.dropFirst().first ?? NSTemporaryDirectory() + "jarvis-native"
@@ -146,7 +169,7 @@ final class AudioHistory {
     }
     func execute(_ method: String, _ p: [String: Any]) async throws -> Any {
         switch method {
-        case "ping": return ["version": 1, "permissions": permissions(), "voiceProcessing": voiceProcessing, "listening": listening, "reduceMotion": NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, "reduceTransparency": NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency]
+        case "ping": return ["version": 1, "permissions": permissions(), "voiceProcessing": voiceProcessing, "playbackCancelled": playerAttached, "listening": listening, "reduceMotion": NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, "reduceTransparency": NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency]
         case "permissions": return permissions()
         case "permission.request":
             switch p["permission"] as? String {
@@ -163,54 +186,80 @@ final class AudioHistory {
             // Already listening: take the tap over and start the file without stopping the engine,
             // so a turn that begins on a wake word does not lose the words already in the air.
             let takeover = listening
-            let carried = takeover ? audioHistory?.snapshot() ?? [] : []
-            generation = p["generation"] as? Int ?? generation + 1
+            let history = takeover ? audioHistory?.snapshot() ?? [] : []
+            let seconds = min(3, max(0, p["preRollSeconds"] as? Double ?? 1))
+            let carried = Array(history.suffix(Int((audioHistory?.sampleRate ?? 16000) * seconds)))
+            captureGeneration = p["generation"] as? Int ?? captureGeneration + 1
+            captureRate = 16000
             let path = ephemeral.appendingPathComponent(UUID().uuidString + ".wav")
             let started = try openTap(writeTo: path, preRoll: carried)
             recordPath = path
             listening = false
-            return ["sampleRate": started.sampleRate, "generation": generation, "voiceProcessing": voiceProcessing, "preRoll": started.preRoll]
+            return ["sampleRate": started.sampleRate, "generation": captureGeneration, "voiceProcessing": voiceProcessing, "playbackCancelled": playerAttached, "preRoll": started.preRoll]
         case "listen.start":
             guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else { throw fail("Allow microphone access in Settings first.") }
-            if audio.isRunning && listening { return ["sampleRate": audioHistory?.sampleRate ?? 0, "generation": generation, "voiceProcessing": voiceProcessing] }
+            let requestedRate = p["sampleRate"] as? Double ?? 16000
+            guard [16000.0, 24000.0].contains(requestedRate) else { throw fail("Unsupported microphone sample rate.") }
+            if audio.isRunning && listening && captureRate == requestedRate { return ["sampleRate": captureRate, "generation": captureGeneration, "voiceProcessing": voiceProcessing, "playbackCancelled": playerAttached] }
             guard recording == nil else { throw fail("A recording is already in progress.") }
-            generation = p["generation"] as? Int ?? generation + 1
-            let opened = try openTap(writeTo: nil, preRoll: [])
+            let carrySeconds = min(8, max(0, p["preRollSeconds"] as? Double ?? 0))
+            let carried = try historyPCM(seconds: carrySeconds, rate: requestedRate)
+            captureGeneration = p["generation"] as? Int ?? captureGeneration + 1
+            captureRate = requestedRate
+            _ = try openTap(writeTo: nil, preRoll: [])
             listening = true
-            return ["sampleRate": opened.sampleRate, "generation": generation, "voiceProcessing": voiceProcessing]
+            return ["sampleRate": captureRate, "generation": captureGeneration, "voiceProcessing": voiceProcessing, "playbackCancelled": playerAttached, "preRollPCM": carried]
         case "listen.stop":
             // Safe when nothing is listening: a caller should not have to track that for us.
-            if listening {
-                if audio.isRunning { audio.stop(); audio.inputNode.removeTap(onBus: 0) }
+            if listening && (p["generation"] == nil || p["generation"] as? Int == captureGeneration) {
+                stopEngine()
                 audioHistory = nil
                 listening = false
             }
             return true
         case "audio.preview":
             guard audio.isRunning, let history = audioHistory else { throw fail("No active recording.") }
-            let samples = history.snapshot()
+            let seconds = min(8, max(0.1, p["seconds"] as? Double ?? 8))
+            let samples = Array(history.snapshot().suffix(Int(history.sampleRate * seconds)))
             guard !samples.isEmpty, let format = AVAudioFormat(standardFormatWithSampleRate: history.sampleRate, channels: 1), let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(samples.count)) else { throw fail("Audio preview is not ready.") }
             buffer.frameLength = AVAudioFrameCount(samples.count)
             samples.withUnsafeBufferPointer { source in buffer.floatChannelData![0].update(from: source.baseAddress!, count: samples.count) }
             let path = ephemeral.appendingPathComponent(UUID().uuidString + ".wav")
             let preview = try AVAudioFile(forWriting: path, settings: format.settings)
             try preview.write(from: buffer)
-            return ["path": path.path, "generation": generation]
+            return ["path": path.path, "generation": captureGeneration]
         case "audio.stop":
-            if audio.isRunning { audio.stop(); audio.inputNode.removeTap(onBus: 0) }
+            stopEngine()
             listening = false
             recording = nil
             audioHistory = nil
             guard let path = recordPath else { return ["path": NSNull()] }
-            recordPath = nil; return ["path": path.path, "generation": generation]
+            recordPath = nil; return ["path": path.path, "generation": captureGeneration]
         case "audio.discard":
-            if audio.isRunning { audio.stop(); audio.inputNode.removeTap(onBus: 0) }; listening = false; recording = nil; audioHistory = nil
+            stopEngine(); listening = false; recording = nil; audioHistory = nil
             if let path = recordPath { try? FileManager.default.removeItem(at: path) }; recordPath = nil; return true
-        case "speech.stop": generation = p["generation"] as? Int ?? generation + 1; playbackMeter?.invalidate(); playbackMeter = nil; player?.stop(); player = nil; playbackQueue.removeAll(); playbackGenerations.removeAll(); speech.stopSpeaking(at: .immediate); return ["playing": false, "generation": generation]
-        case "speech.status": return ["playing": player?.isPlaying ?? false, "speaking": speech.isSpeaking, "generation": generation, "outputRoute": outputRoute()]
+        case "speech.stop":
+            let heard = playedSeconds + min(pieceDuration, pieceStartedAt.map { Date().timeIntervalSince($0) } ?? 0)
+            generation = p["generation"] as? Int ?? generation + 1
+            streamGeneration = nil; completionReported = true
+            playbackMeter?.invalidate(); playbackMeter = nil; player?.stop(); player = nil; playbackQueue.removeAll(); playbackGenerations.removeAll(); speech.stopSpeaking(at: .immediate)
+            stopNodePlayback()
+            return ["playing": false, "generation": generation, "playedMs": Int(heard * 1000)]
+        case "speech.begin":
+            generation = p["generation"] as? Int ?? generation + 1
+            streamGeneration = generation; completionReported = false
+            playedSeconds = 0; pieceStartedAt = nil; pieceDuration = 0
+            return ["generation": generation]
+        case "speech.end":
+            guard p["generation"] as? Int == generation else { return false }
+            streamGeneration = nil
+            finishPlayback(generation)
+            return true
+        case "speech.status": return ["playing": player?.isPlaying ?? false || nodePending > 0, "speaking": speech.isSpeaking, "generation": generation, "outputRoute": outputRoute()]
         case "speech.system":
             let text = p["text"] as? String ?? ""; guard text.count <= 12_000 else { throw fail("Speech is too long.") }
             speech.stopSpeaking(at: .immediate); generation = p["generation"] as? Int ?? generation + 1
+            streamGeneration = nil; completionReported = false
             let utterance = AVSpeechUtterance(string: text)
             utterance.voice = AVSpeechSynthesisVoice.speechVoices().first { $0.language == "en-GB" && $0.gender == .male } ?? AVSpeechSynthesisVoice(language: "en-GB")
             utterance.rate = Float((p["speed"] as? Double ?? 1) * 0.48)
@@ -218,7 +267,9 @@ final class AudioHistory {
             speech.speak(utterance); return true
         case "speech.play":
             let url = try playableURL(p["path"] as? String ?? "")
-            playbackMeter?.invalidate(); player?.stop(); playbackQueue.removeAll(); playbackGenerations.removeAll(); speech.stopSpeaking(at: .immediate); generation = p["generation"] as? Int ?? generation + 1
+            playbackMeter?.invalidate(); player?.stop(); playbackQueue.removeAll(); playbackGenerations.removeAll(); speech.stopSpeaking(at: .immediate); stopNodePlayback(); generation = p["generation"] as? Int ?? generation + 1
+            streamGeneration = nil; completionReported = false
+            playedSeconds = 0; pieceStartedAt = nil; pieceDuration = 0
             try startPlayback(url, session: generation)
             return true
         case "speech.enqueue":
@@ -227,12 +278,34 @@ final class AudioHistory {
             let url = try playableURL(p["path"] as? String ?? "")
             let session = p["generation"] as? Int ?? generation
             guard session == generation else { return ["queued": false, "generation": generation] }
-            if player?.isPlaying == true {
+            if nodePending > 0 && nodeSession == session {
+                // The node plays scheduled pieces back to back on its own.
+                try playThroughEngine(url, session: session)
+            } else if player?.isPlaying == true {
                 playbackQueue.append(url)
             } else {
                 try startPlayback(url, session: session)
             }
             return ["queued": true, "generation": generation]
+        case "speech.chunk":
+            guard let session = p["generation"] as? Int, session == generation, streamGeneration == session else { return ["queued": false] }
+            guard let encoded = p["pcm"] as? String, let data = Data(base64Encoded: encoded), !data.isEmpty, data.count <= 24000 * 2 * 2, data.count % 2 == 0,
+                  let format = AVAudioFormat(standardFormatWithSampleRate: 24000, channels: 1),
+                  let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(data.count / 2)) else { throw fail("Invalid speech audio chunk.") }
+            guard audio.isRunning && playerAttached else { throw fail("Open the audio engine before streaming speech.") }
+            buffer.frameLength = buffer.frameCapacity
+            data.withUnsafeBytes { raw in
+                for index in 0..<Int(buffer.frameLength) {
+                    buffer.floatChannelData![0][index] = Float(Int16(littleEndian: raw.loadUnaligned(fromByteOffset: index * 2, as: Int16.self))) / 32768
+                }
+            }
+            if playerFormat?.isEqual(format) != true {
+                audio.connect(playerNode, to: audio.mainMixerNode, format: format); playerFormat = format
+            }
+            schedulePiece(session, duration: Double(buffer.frameLength) / 24000) { completion in
+                self.playerNode.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack, completionHandler: completion)
+            }
+            return ["queued": true]
         case "file.create":
             guard let root = p["root"] as? String, let relative = p["relativePath"] as? String, let text = p["content"] as? String, text.utf8.count <= 100_000 else { throw fail("Invalid bounded file proposal.") }
             let parts = relative.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
@@ -364,6 +437,29 @@ final class AudioHistory {
         }
     }
     struct TapStart { let sampleRate: Double; let preRoll: Bool }
+    func historyPCM(seconds: Double, rate: Double) throws -> String {
+        guard seconds > 0, let history = audioHistory else { return "" }
+        let samples = Array(history.snapshot().suffix(Int(history.sampleRate * seconds)))
+        guard !samples.isEmpty,
+              let source = AVAudioFormat(standardFormatWithSampleRate: history.sampleRate, channels: 1),
+              let target = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: rate, channels: 1, interleaved: true),
+              let input = AVAudioPCMBuffer(pcmFormat: source, frameCapacity: AVAudioFrameCount(samples.count)),
+              let output = AVAudioPCMBuffer(pcmFormat: target, frameCapacity: AVAudioFrameCount(Double(samples.count) * rate / history.sampleRate) + 32),
+              let converter = AVAudioConverter(from: source, to: target) else { return "" }
+        input.frameLength = AVAudioFrameCount(samples.count)
+        samples.withUnsafeBufferPointer { input.floatChannelData![0].update(from: $0.baseAddress!, count: samples.count) }
+        var supplied = false
+        var error: NSError?
+        // Conversion consumes this private buffer synchronously before the method returns.
+        nonisolated(unsafe) let convertedInput = input
+        converter.convert(to: output, error: &error) { _, status in
+            if supplied { status.pointee = .endOfStream; return nil }
+            supplied = true; status.pointee = .haveData; return convertedInput
+        }
+        if let error { throw error }
+        guard let data = output.int16ChannelData?[0] else { return "" }
+        return Data(bytes: data, count: Int(output.frameLength) * 2).base64EncodedString()
+    }
     /**
      * One microphone tap, with or without a file behind it. Apple's echo cancellation is asked for
      * once, before anything reads the format — it can change the sample rate and channel count, so
@@ -383,21 +479,18 @@ final class AudioHistory {
         }
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0 && format.channelCount > 0 else { throw fail("No microphone is available.") }
+        guard let captureFormat = AVAudioFormat(standardFormatWithSampleRate: format.sampleRate, channels: 1) else { throw fail("The microphone format is unavailable.") }
         var file: AVAudioFile?
         var seeded = false
         if let path {
-            let opened = try AVAudioFile(forWriting: path, settings: format.settings)
-            // Words already in the air when the turn began belong to it. The history keeps one
-            // channel, so it is written to every channel the file has rather than only to a mono
-            // one — a microphone that is not mono is the ordinary case, not the exception.
+            let opened = try AVAudioFile(forWriting: path, settings: captureFormat.settings)
+            // The rolling history and the recording contain the same microphone channel.
             if !carried.isEmpty,
-               let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(carried.count)),
+               let buffer = AVAudioPCMBuffer(pcmFormat: captureFormat, frameCapacity: AVAudioFrameCount(carried.count)),
                let channels = buffer.floatChannelData {
                 buffer.frameLength = AVAudioFrameCount(carried.count)
                 carried.withUnsafeBufferPointer { source in
-                    for channel in 0..<Int(format.channelCount) {
-                        channels[channel].update(from: source.baseAddress!, count: carried.count)
-                    }
+                    channels[0].update(from: source.baseAddress!, count: carried.count)
                 }
                 if (try? opened.write(from: buffer)) != nil { seeded = true }
             }
@@ -409,21 +502,154 @@ final class AudioHistory {
         let history = AudioHistory(sampleRate: format.sampleRate)
         audioHistory = history
         var frames: Int64 = 0
-        let session = generation
+        let session = captureGeneration
+        // The model runtime hears this same microphone as a stream of 16 kHz frames, so speech is
+        // judged as it happens rather than from snapshots written to disk every second or so.
+        let rate = captureRate
+        let stream = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: rate, channels: 1, interleaved: true)
+        let converter = stream.flatMap { AVAudioConverter(from: captureFormat, to: $0) }
+        // A tap opening while a reply still plays through the engine keeps the engine it found running.
+        stopEngineWhenIdle = false
+        if !playerAttached && !audio.isRunning {
+            // Attached before the engine starts, so playing a reply later never reconfigures a
+            // running graph. Replies are 24 kHz mono; a piece in another format reconnects.
+            audio.attach(playerNode)
+            playerFormat = AVAudioFormat(standardFormatWithSampleRate: 24000, channels: 1)
+            audio.connect(playerNode, to: audio.mainMixerNode, format: playerFormat)
+            // Left to itself the engine joins the mixer to the output at 44.1 kHz stereo, which the
+            // voice-processing output refuses (error -10875, observed here with a USB microphone and
+            // the built-in speakers). Joined at the microphone's rate, it starts.
+            audio.connect(audio.mainMixerNode, to: audio.outputNode, format: AVAudioFormat(standardFormatWithSampleRate: format.sampleRate, channels: 2))
+            playerNode.installTap(onBus: 0, bufferSize: 1024, format: nil) { [weak self] buffer, _ in
+                guard let samples = buffer.floatChannelData?[0] else { return }
+                var energy: Float = 0; for i in 0..<Int(buffer.frameLength) { energy += samples[i] * samples[i] }
+                let amplitude = min(1, Double(sqrt(energy / Float(max(buffer.frameLength, 1)))) * 3.2)
+                Task { @MainActor in
+                    guard let self, self.nodePending > 0 else { return }
+                    event("speech.level", ["generation": self.nodeSession, "level": amplitude])
+                }
+            }
+            playerAttached = true
+        }
         input.removeTap(onBus: 0)
-        input.installTap(onBus: 0, bufferSize: 2048, format: format) { buffer, _ in
-            history.append(buffer)
+        input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
+            // Voice processing can expose an aggregate format (nine channels on this Mac).
+            // Its default downmix produced all-zero PCM despite a live first channel. Select
+            // that microphone channel before resampling, and use it for the file and meter too.
+            guard let source = buffer.floatChannelData?[0],
+                  let captured = AVAudioPCMBuffer(pcmFormat: captureFormat, frameCapacity: buffer.frameLength),
+                  let samples = captured.floatChannelData?[0] else { return }
+            captured.frameLength = buffer.frameLength
+            var energy: Float = 0
+            for i in 0..<Int(buffer.frameLength) {
+                let value = source[i * Int(buffer.stride)]
+                samples[i] = value
+                energy += value * value
+            }
+            history.append(captured)
             if let file {
-                do { try file.write(from: buffer) } catch { event("audio.error", ["message": "The microphone recording could not be written.", "generation": session]) }
+                do { try file.write(from: captured) } catch { event("audio.error", ["message": "The microphone recording could not be written.", "generation": session]) }
             }
             frames += Int64(buffer.frameLength)
-            guard let samples = buffer.floatChannelData?[0] else { return }
-            var energy: Float = 0; for i in 0..<Int(buffer.frameLength) { energy += samples[i] * samples[i] }
             let rms = sqrt(energy / Float(max(buffer.frameLength, 1)))
-            event("audio.level", ["level": min(1, Double(rms) * 7), "generation": session, "elapsed": Double(frames) / format.sampleRate])
+            var payload: [String: Any] = ["level": min(1, Double(rms) * 7), "generation": session, "elapsed": Double(frames) / format.sampleRate, "sampleRate": rate, "inputSampleRate": format.sampleRate, "inputChannels": Int(format.channelCount)]
+            if let converter, let stream,
+               let out = AVAudioPCMBuffer(pcmFormat: stream, frameCapacity: AVAudioFrameCount(Double(buffer.frameLength) * rate / format.sampleRate) + 32) {
+                var consumed = false
+                var error: NSError?
+                _ = converter.convert(to: out, error: &error) { _, status in
+                    if consumed { status.pointee = .noDataNow; return nil }
+                    consumed = true
+                    status.pointee = .haveData
+                    return captured
+                }
+                if error == nil, out.frameLength > 0, let data = out.int16ChannelData {
+                    payload["pcm"] = Data(bytes: data[0], count: Int(out.frameLength) * 2).base64EncodedString()
+                    var pcmEnergy = 0.0
+                    for i in 0..<Int(out.frameLength) {
+                        let sample = Double(data[0][i]) / 32768
+                        pcmEnergy += sample * sample
+                    }
+                    payload["pcmLevel"] = min(1, sqrt(pcmEnergy / Double(out.frameLength)) * 7)
+                }
+            }
+            event("audio.level", payload)
         }
-        if !audio.isRunning { audio.prepare(); try audio.start() }
+        if !audio.isRunning {
+            audio.prepare()
+            do { try audio.start() } catch {
+                // A route that refuses the reply path still has to listen. Try once more with the
+                // graph the microphone alone needs, and say so: replies will then play outside the
+                // engine, where echo cancellation cannot see them, and interrupting is not offered.
+                guard playerAttached else { throw fail("The audio engine could not start (\(error.localizedDescription)). Microphone \(audio.inputNode.inputFormat(forBus: 0)) heard as \(format); speaker \(outputRoute()) \(audio.outputNode.inputFormat(forBus: 0)).") }
+                playerNode.removeTap(onBus: 0)
+                audio.disconnectNodeOutput(playerNode)
+                audio.disconnectNodeInput(audio.outputNode)
+                audio.detach(playerNode)
+                playerAttached = false
+                playerFormat = nil
+                audio.prepare()
+                do { try audio.start() } catch {
+                    throw fail("The audio engine could not start (\(error.localizedDescription)). Microphone \(audio.inputNode.inputFormat(forBus: 0)) heard as \(format); speaker \(outputRoute()) \(audio.outputNode.inputFormat(forBus: 0)).")
+                }
+            }
+        }
         return TapStart(sampleRate: format.sampleRate, preRoll: seeded)
+    }
+    /** The microphone closes at once; the engine follows only when no reply still plays through it. */
+    func stopEngine() {
+        guard audio.isRunning else { return }
+        audio.inputNode.removeTap(onBus: 0)
+        if nodePending > 0 { stopEngineWhenIdle = true } else { audio.stop() }
+    }
+    func playThroughEngine(_ url: URL, session: Int) throws {
+        let file = try AVAudioFile(forReading: url)
+        guard audio.isRunning else { throw fail("The audio engine is not running, so the reply cannot play through it.") }
+        if playerFormat?.isEqual(file.processingFormat) != true {
+            audio.connect(playerNode, to: audio.mainMixerNode, format: file.processingFormat)
+            playerFormat = file.processingFormat
+        }
+        schedulePiece(session, duration: Double(file.length) / file.processingFormat.sampleRate) { completion in
+            self.playerNode.scheduleFile(file, at: nil, completionCallbackType: .dataPlayedBack, completionHandler: completion)
+        }
+    }
+    func schedulePiece(_ session: Int, duration: Double, schedule: (_ completion: @escaping @Sendable (AVAudioPlayerNodeCompletionCallbackType) -> Void) -> Void) {
+        if nodeSession != session { nodeSession = session; nodePending = 0; nodeDurations.removeAll() }
+        if nodePending == 0 { pieceStartedAt = Date(); pieceDuration = duration }
+        nodePending += 1; nodeDurations.append(duration)
+        let epoch = playbackEpoch
+        schedule { [weak self] _ in
+            Task { @MainActor in
+                guard let self, epoch == self.playbackEpoch else { return }
+                self.nodePieceFinished(session)
+            }
+        }
+        if !playerNode.isPlaying { playerNode.play() }
+    }
+    func nodePieceFinished(_ session: Int) {
+        guard session == nodeSession, nodePending > 0 else { return }
+        nodePending -= 1
+        playedSeconds += nodeDurations.removeFirst()
+        pieceStartedAt = nodePending > 0 ? Date() : nil
+        pieceDuration = nodeDurations.first ?? 0
+        if nodePending > 0 { return }
+        playerNode.stop()
+        if stopEngineWhenIdle { stopEngineWhenIdle = false; audio.stop() }
+        finishPlayback(session)
+    }
+    func finishPlayback(_ session: Int, success: Bool = true) {
+        guard session == generation, streamGeneration != session, !completionReported,
+              nodePending == 0, player?.isPlaying != true, playbackQueue.isEmpty else { return }
+        completionReported = true
+        event("speech.finished", ["generation": session, "success": success, "playedMs": Int(playedSeconds * 1000)])
+    }
+    func stopNodePlayback() {
+        playbackEpoch += 1
+        nodePending = 0
+        nodeDurations.removeAll(); pieceStartedAt = nil; pieceDuration = 0
+        nodeSession = generation
+        playerNode.stop()
+        if stopEngineWhenIdle { stopEngineWhenIdle = false; audio.stop() }
     }
     func playableURL(_ path: String) throws -> URL {
         let url = URL(fileURLWithPath: path).standardizedFileURL
@@ -432,11 +658,14 @@ final class AudioHistory {
     }
     func startPlayback(_ url: URL, session: Int) throws {
         playbackMeter?.invalidate()
+        // With the microphone open the engine is running, and the reply has to go through it.
+        if audio.isRunning && playerAttached { try playThroughEngine(url, session: session); return }
         player = try AVAudioPlayer(contentsOf: url); player?.delegate = self
         if let value = player { playbackGenerations[ObjectIdentifier(value)] = session }
         player?.isMeteringEnabled = true
         player?.prepareToPlay()
         guard player?.play() == true else { player = nil; throw fail("The audio output route is unavailable.") }
+        pieceStartedAt = Date(); pieceDuration = player?.duration ?? 0
         playbackMeter = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self = self, let player = self.player, player.isPlaying, session == self.generation else { return }
@@ -448,13 +677,14 @@ final class AudioHistory {
     }
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         guard let session = playbackGenerations.removeValue(forKey: ObjectIdentifier(player)) else { return }
+        if self.player === player { playedSeconds += player.duration; pieceStartedAt = nil; pieceDuration = 0 }
         // The next sentence of the same reply follows straight on; only the last one reports done.
         if self.player === player, session == generation, flag, !playbackQueue.isEmpty {
             let next = playbackQueue.removeFirst()
             if (try? startPlayback(next, session: session)) != nil { return }
         }
-        if self.player === player { playbackMeter?.invalidate(); playbackMeter = nil; playbackQueue.removeAll() }
-        event("speech.finished", ["generation": session, "success": flag])
+        if self.player === player { playbackMeter?.invalidate(); playbackMeter = nil; playbackQueue.removeAll(); self.player = nil }
+        finishPlayback(session, success: flag)
     }
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) { if let session = speechGenerations.removeValue(forKey: ObjectIdentifier(utterance)) { event("speech.finished", ["generation": session, "success": true]) } }
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) { speechGenerations.removeValue(forKey: ObjectIdentifier(utterance)) }

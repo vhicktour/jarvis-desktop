@@ -16,6 +16,7 @@ export async function scopedPath(root: string, input: string) {
   )
   const realRoot = await realpath(root)
   const target = join(realRoot, input)
+  if (target === realRoot) return target
   let parent = dirname(target)
   while (parent !== realRoot) {
     try {
@@ -81,7 +82,8 @@ export function literalFileContent(objective: string): string | undefined {
   const match = objective.match(/\bcontaining exactly\s*:?\s+(.+)$/i)
   if (!match) return
   const text = match[1]
-  return /^(?:"[\s\S]*"|'[\s\S]*'|“[\s\S]*”)$/.test(text) ? text.slice(1, -1) : text
+  const quoted = text.match(/^(?:"([\s\S]*)"|'([\s\S]*)'|“([\s\S]*)”)[.!?]?$/)
+  return quoted ? (quoted[1] ?? quoted[2] ?? quoted[3]) : text
 }
 type Native = <T = any>(method: string, params?: unknown) => Promise<T>
 /**

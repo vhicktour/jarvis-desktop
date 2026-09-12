@@ -1,0 +1,125 @@
+{
+  "before": {
+    "generatedAt": "2026-09-12T21:17:22.893Z",
+    "humanSpeechTested": false,
+    "capture": {
+      "inputChannels": [
+        9
+      ],
+      "inputSampleRates": [
+        48000
+      ],
+      "outputSampleRates": [
+        16000,
+        24000
+      ],
+      "peakInputLevel": 0.0780169190838933,
+      "peakPCMLevel": 0
+    },
+    "passed": true,
+    "checks": [
+      "stream starvation",
+      "capture/playback isolation",
+      "single completion",
+      "stale audio rejection",
+      "stale microphone cleanup",
+      "24 kHz capture and playback",
+      "played duration"
+    ],
+    "silentStreamDefect": true,
+    "scope": "Earlier lifecycle assertions passed without testing whether nonzero microphone audio survived conversion. The new conversion assertion would reject this result."
+  },
+  "finding": "Native voice-processing input had nine channels. The volume meter was nonzero while all streamed PCM samples were zero.",
+  "after": {
+    "generatedAt": "2026-09-12T21:20:36.154Z",
+    "humanSpeechTested": false,
+    "capture": {
+      "inputChannels": [
+        9
+      ],
+      "inputSampleRates": [
+        48000
+      ],
+      "outputSampleRates": [
+        16000,
+        24000
+      ],
+      "peakInputLevel": 0.19394434057176113,
+      "peakPCMLevel": 0.18726095100707246,
+      "recordingChannels": 1
+    },
+    "passed": true,
+    "checks": [
+      "stream starvation",
+      "capture/playback isolation",
+      "single completion",
+      "stale audio rejection",
+      "stale microphone cleanup",
+      "24 kHz capture and playback",
+      "played duration",
+      "non-silent microphone conversion",
+      "mono recognition recording"
+    ]
+  },
+  "echoRetest": {
+    "generatedAt": "2026-09-12T21:20:39.631Z",
+    "profile": "/Users/victor/Library/Application Support/Jarvis",
+    "microphoneRouteTested": true,
+    "scope": "One rendered reply is played out of the speaker twice while the microphone is open: through the audio engine, where Apple\u2019s echo cancellation subtracts it, and through a player outside the engine. The voice model reports how much of each came back as speech.",
+    "rawMicrophone": {
+      "microphone": "MacBook Pro Microphone",
+      "speaker": "MacBook Pro Speakers",
+      "rms": 0.0268,
+      "speechFraction": 0.763
+    },
+    "throughEngine": {
+      "voiceProcessing": true,
+      "replySeconds": 8.72,
+      "speechHeardSeconds": 0.19,
+      "speechFraction": 0.022,
+      "transitions": 2,
+      "idleTransitionsBeforePlayback": 0,
+      "frames": 98
+    },
+    "outsideEngine": {
+      "voiceProcessing": true,
+      "replySeconds": 8.72,
+      "speechHeardSeconds": 0,
+      "speechFraction": 0,
+      "transitions": 0,
+      "idleTransitionsBeforePlayback": 0,
+      "frames": 101
+    },
+    "passed": true
+  },
+  "prefixCacheVerification": {
+    "beforeCachedTokens": [
+      236,
+      236
+    ],
+    "after": [
+      {
+        "promptTokens": 314,
+        "cachedTokens": 236
+      },
+      {
+        "promptTokens": 330,
+        "cachedTokens": 254
+      },
+      {
+        "promptTokens": 401,
+        "cachedTokens": 302
+      },
+      {
+        "promptTokens": 479,
+        "cachedTokens": 0
+      },
+      {
+        "promptTokens": 498,
+        "cachedTokens": 384
+      }
+    ],
+    "servicePassed": true,
+    "humanMicrophoneLatencyMeasured": false
+  }
+}

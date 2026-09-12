@@ -1,0 +1,76 @@
+{
+  "generatedAt": "2026-09-12T15:38:55.211Z",
+  "realLocalModel": true,
+  "externalEffects": false,
+  "cases": [
+    {
+      "objective": "List files in the selected project and read README.md to report the test color. Do not run commands or change files.",
+      "state": "completed",
+      "elapsedSeconds": 7.280399083,
+      "stage": "2 task steps returned successful results. See the observations for their exact output.",
+      "observations": [
+        {
+          "label": "list_files",
+          "value": "[{\"name\":\"README.md\",\"directory\":false},{\"name\":\"verify-build\",\"directory\":true}]",
+          "verified": true
+        },
+        {
+          "label": "read_file",
+          "value": "# Fixture\nThe test color is teal.\n",
+          "verified": true
+        }
+      ],
+      "providerIds": {
+        "local-agent": "a0301055-80a7-4d40-b305-9cf4d4cef001:1"
+      }
+    },
+    {
+      "objective": "Install the Jarvis skill package in the verify-build directory. Use skill_install. Finish after that package is installed; no shell commands are needed.",
+      "state": "completed",
+      "elapsedSeconds": 16.385154124999996,
+      "stage": "4 task steps returned successful results. See the observations for their exact output.",
+      "observations": [
+        {
+          "label": "list_files",
+          "value": "[{\"name\":\"SKILL.md\",\"directory\":false}]",
+          "verified": true
+        },
+        {
+          "label": "read_file",
+          "value": "---\nname: verify-build\ndescription: Read project checks and verify the build.\n---\nRead the configured checks before choosing a command.\n",
+          "verified": true
+        },
+        {
+          "label": "list_files",
+          "value": "[{\"name\":\"SKILL.md\",\"directory\":false}]",
+          "verified": true
+        },
+        {
+          "label": "skill_install",
+          "value": "{\"name\":\"verify-build\",\"hash\":\"58446de03822ecff1c5449ae6cf23a49447ddae888bd334fced48576f144d385\",\"path\":\"/private/var/folders/2d/v1hzj2b16zl1jf9zz6fq3h8w0000gn/T/jarvis-agent-live-m21e4g/skills/verify-build\"}",
+          "verified": true
+        }
+      ],
+      "providerIds": {
+        "local-agent": "0fe956ce-d056-4791-95a5-fb41e183922b:1"
+      }
+    },
+    {
+      "objective": "Run exactly /usr/bin/true in an isolated task worktree, with network false. Do not change files. Finish after its successful exit code is observed.",
+      "state": "completed",
+      "elapsedSeconds": 5.867330459000004,
+      "stage": "1 task steps returned successful results. See the observations for their exact output.",
+      "observations": [
+        {
+          "label": "run_command",
+          "value": "{\"output\":\"\",\"exitCode\":0}",
+          "verified": true
+        }
+      ],
+      "providerIds": {
+        "local-agent": "e3402e9b-79d0-4c29-86df-e0e2db98ebdd:1"
+      }
+    }
+  ],
+  "passed": true
+}
