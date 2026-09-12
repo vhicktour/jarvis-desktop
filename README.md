@@ -50,3 +50,7 @@ node --import tsx scripts/verify-voice-lifecycle.ts
 ```
 
 The app harness normally uses a disposable profile linked to existing model weights. Its `--installed-voice` flag deliberately tests the signed installation with the user's profile and enables natural local conversation; it is intended for an authorized personal setup. Real-model agent tests use temporary repositories and approve only their exact harmless fixture actions. Human speech and paid provider checks are identified separately in the evidence.
+
+## Contributing
+
+Contributions are welcome. Open an issue or pull request with bug reports, voice and model improvements, performance measurements, documentation, or other fixes. The [verification status](verification/STATUS.md) lists known gaps and provides a starting point.
